@@ -1,0 +1,20 @@
+{
+  "name": "autopw",
+  "version": "0.3.0",
+  "description": "Review web application code, create risk-based test plans, verify behavior with Playwright MCP and other evidence channels, and generate Chinese QA reports.",
+  "author": {
+    "name": "kanho532",
+    "url": "https://github.com/kanho532"
+  },
+  "homepage": "https://github.com/kanho532/autopw",
+  "repository": "https://github.com/kanho532/autopw",
+  "license": "MIT",
+  "keywords": [
+    "playwright",
+    "testing",
+    "qa",
+    "code-review"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "AutoPW Web Audit"
+  short_description: "审查代码、设计用例并验证 Web 应用"
+  default_prompt: "Use $autopw-web-audit to review this web app, execute the applicable evidence channels, and write the required Chinese report."
