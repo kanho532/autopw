@@ -1,21 +1,21 @@
-# CORS in development-proxy setups
+# 开发代理环境中的 CORS
 
-Use this sequence when a proxied frontend action fails but the backend endpoint succeeds in a direct client.
+当经过代理的前端操作失败，但后端端点在直接客户端中成功时，使用以下顺序。
 
-## Signature
+## 特征
 
-- The click or submission fails in the browser.
-- A direct request to the backend succeeds.
-- The browser reports a failed actual request, CORS error, or framework-level rejected handler.
-- An `OPTIONS` request may appear successful because the development server answered it.
+- 点击或提交操作在浏览器中失败。
+- 对后端的直接请求成功。
+- 浏览器报告实际请求失败、CORS 错误或框架层的处理器拒绝错误。
+- `OPTIONS` 请求可能显示成功，因为它由开发服务器响应。
 
-## Verification
+## 验证
 
-1. Capture the browser's actual request URL, method, origin, credentials mode, status, body, and response headers.
-2. Reproduce the request safely from page context with the same method and credentials.
-3. Identify whether `OPTIONS` was answered by the frontend development server, proxy, gateway, or backend.
-4. Read proxy and backend CORS configuration. Compare allowed origins, methods, headers, and credentials with the actual request.
-5. Test the smallest change in an isolated environment if implementation is authorized.
-6. Re-run the original UI action and confirm the state mutation through the authoritative API or persistence layer.
+1. 捕获浏览器实际请求的 URL、方法、来源、凭据模式、响应状态、响应体和响应头。
+2. 使用相同的方法和凭据，在页面上下文中安全地复现该请求。
+3. 确定 `OPTIONS` 是由前端开发服务器、代理、网关还是后端响应的。
+4. 阅读代理和后端 CORS 配置。将允许的来源、方法、请求头和凭据与实际请求进行比较。
+5. 如果已获授权实施修改，在隔离环境中测试最小变更。
+6. 重新执行原始 UI 操作，并通过权威 API 或持久化层确认状态变更。
 
-Do not conclude that CORS is correct from curl success or preflight success alone. Also verify that the backend persists the requested change; transport and persistence failures can share one UI symptom.
+不要仅凭 curl 成功或预检成功就断定 CORS 正常。还要验证后端是否持久化了所请求的变更；传输故障与持久化故障可能表现为同一个 UI 症状。

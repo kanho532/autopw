@@ -1,4 +1,4 @@
 interface:
-  display_name: "AutoPW Exploratory Testing"
+  display_name: "AutoPW 探索式测试"
   short_description: "探索 Web 流程并生成中文缺陷报告"
-  default_prompt: "Use $autopw-exploratory-testing to test this web app and produce the mandatory Chinese dogfood-style report."
+  default_prompt: "使用 $autopw-exploratory-testing 测试此 Web 应用，并生成强制要求的中文 dogfood 风格报告。"

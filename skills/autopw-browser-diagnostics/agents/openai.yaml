@@ -1,4 +1,4 @@
 interface:
-  display_name: "AutoPW Browser Diagnostics"
+  display_name: "AutoPW 浏览器诊断"
   short_description: "诊断只在真实浏览器中出现的故障"
-  default_prompt: "Use $autopw-browser-diagnostics to diagnose this browser-visible failure and summarize the evidence in Chinese."
+  default_prompt: "使用 $autopw-browser-diagnostics 诊断此浏览器可见故障，并用中文总结证据。"

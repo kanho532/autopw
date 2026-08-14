@@ -1,54 +1,54 @@
 ---
 name: autopw-browser-diagnostics
-description: Diagnose trusted web-application failures that differ between Playwright or a real browser and direct API clients, including CORS, rejected event handlers, failed requests, console errors, authentication propagation, and DOM injection evidence. Use when curl/API checks pass but the UI fails, browser-only behavior needs root-cause evidence, or an AutoPW audit finds ambiguous browser errors.
+description: 诊断受信任 Web 应用中 Playwright 或真实浏览器与直接 API 客户端表现不同的故障，包括 CORS、事件处理器被拒绝、请求失败、控制台错误、身份验证传递和 DOM 注入证据。当 curl/API 检查通过但 UI 失败、需要对浏览器特有行为取得根因证据，或 AutoPW 审查发现含义不明确的浏览器错误时使用。
 ---
 
-# AutoPW Browser Diagnostics
+# AutoPW 浏览器诊断
 
-Diagnose the browser-visible mechanism before proposing a fix.
+先诊断浏览器可见的故障机制，再提出修复方案。
 
-Write diagnostic summaries and any report-ready finding in Simplified Chinese by default. Preserve raw browser errors, requests, identifiers, and code in their original form.
+默认使用简体中文编写诊断摘要及可直接写入报告的发现。浏览器原始错误、请求、标识符和代码保持原样。
 
-## Core rule
+## 核心规则
 
-Direct HTTP clients do not reproduce all browser behavior. Browsers enforce origin policy, execute application code, manage cookies and storage, render the DOM, and expose page errors. When UI and API results differ, the page context is authoritative for the browser-visible failure.
+直接 HTTP 客户端无法复现浏览器的全部行为。浏览器会执行同源策略、运行应用代码、管理 Cookie 和存储、渲染 DOM，并暴露页面错误。当 UI 与 API 结果不同时，以页面上下文作为浏览器可见故障的权威依据。
 
-## Diagnostic loop
+## 诊断循环
 
-1. Reproduce the exact user action with the plugin-bundled `autopw-playwright` MCP when available, otherwise use the fallback selected by the sibling `autopw-web-audit` skill. If the host cannot invoke sibling skills by name, read `../autopw-web-audit/SKILL.md` and its execution reference directly.
-2. Capture console messages, `pageerror`, failed requests, relevant responses, URL, and DOM state.
-3. Re-run the exact request from `page.evaluate()` when safe, preserving method, URL, headers, credentials mode, and body.
-4. Compare that result with a direct HTTP request and document the difference.
-5. Read the frontend call site, proxy configuration, backend route, CORS/auth configuration, and persistence code.
-6. Form a falsifiable root-cause hypothesis and run the smallest discriminating check.
-7. Verify independent layers separately. One user symptom can contain more than one defect.
+1. 如果可用，使用插件内置的 `autopw-playwright` MCP 复现用户的确切操作；否则使用同级 `autopw-web-audit` Skill 选定的回退方案。如果宿主无法按名称调用同级 Skill，直接读取 `../autopw-web-audit/SKILL.md` 及其执行参考文档。
+2. 捕获控制台消息、`pageerror`、失败请求、相关响应、URL 和 DOM 状态。
+3. 在安全的情况下，从 `page.evaluate()` 重新执行完全相同的请求，并保留请求方法、URL、请求头、凭据模式和请求体。
+4. 将该结果与直接 HTTP 请求对比，并记录差异。
+5. 阅读前端调用位置、代理配置、后端路由、CORS/身份验证配置和持久化代码。
+6. 形成可证伪的根因假设，并执行能够区分原因的最小检查。
+7. 分别验证各个独立层次。一个用户症状可能包含多个缺陷。
 
-## Common browser-only patterns
+## 常见的浏览器特有模式
 
-### CORS and development proxies
+### CORS 与开发代理
 
-An API call may succeed directly while the UI receives a CORS rejection. A permissive development proxy may answer `OPTIONS` even though the backend rejects the actual method or origin. Inspect the real request and response in page context; do not treat a successful preflight or curl response as proof that the UI path works.
+API 调用可能在直接请求时成功，但 UI 收到 CORS 拒绝。宽松的开发代理可能会响应 `OPTIONS`，即使后端拒绝实际请求方法或来源。检查页面上下文中的真实请求和响应；不要把成功的预检请求或 curl 响应当作 UI 路径正常工作的证明。
 
-Read [cors-dev-proxy.md](references/cors-dev-proxy.md) for the focused verification sequence.
+阅读 [cors-dev-proxy.md](references/cors-dev-proxy.md) 了解针对性的验证顺序。
 
-### Unhandled async event errors
+### 未处理的异步事件错误
 
-Framework warnings around a click handler often wrap a rejected request. Capture the underlying response and page error instead of relying on a truncated framework warning. If required, temporarily wrap `console.warn` or `console.error` in the page before reproduction and retain serialized arguments.
+点击处理器周围的框架警告通常封装了一个被拒绝的请求。捕获底层响应和页面错误，不要只依赖被截断的框架警告。如有必要，在复现前临时包装页面中的 `console.warn` 或 `console.error`，并保留序列化后的参数。
 
-### Authentication propagation
+### 身份验证传递
 
-Compare cookies, storage, authorization headers, redirect behavior, same-site policy, and the backend's final authentication decision. Redact tokens from logs and artifacts.
+比较 Cookie、存储、授权请求头、重定向行为、SameSite 策略以及后端最终的身份验证判断。从日志和制品中移除令牌。
 
-### DOM injection and XSS evidence
+### DOM 注入与 XSS 证据
 
-Do not rely on modal dialogs in headless execution. Demonstrate injection and execution with a harmless, reversible marker such as a DOM attribute or page-local flag. Never exfiltrate data or use destructive payloads. Distinguish rendered markup from demonstrated script execution.
+不要依赖无头执行中的模态对话框。使用无害且可恢复的标记（例如 DOM 属性或页面局部标志）证明注入和执行。绝不能外传数据或使用破坏性载荷。区分“已渲染标记”与“已证明脚本执行”。
 
-## Evidence standard
+## 证据标准
 
-- Back every UI claim with DOM, page-context, console, network, trace, or screenshot evidence.
-- Label direct-client evidence as API-only and note which browser controls it bypasses.
-- Check backend logs for relevant stack traces without exposing unrelated secrets.
-- State when tooling, authentication, or environment limits prevent a conclusion.
-- Report the root cause only when the evidence distinguishes it from plausible alternatives.
-- Do not require browser evidence for claims that are fully proven by API, logs, persisted state, or static source. Require it when the conclusion depends on actual browser behavior.
-- Record the exact browser executor and do not call a host browser or generic automation channel “Playwright”. Distinguish Playwright MCP from Playwright Test.
+- 每项 UI 结论都要有 DOM、页面上下文、控制台、网络、trace 或截图证据支持。
+- 将直接客户端证据标记为仅 API，并注明它绕过了哪些浏览器控制。
+- 检查后端日志中的相关堆栈信息，但不要暴露无关秘密。
+- 当工具、身份验证或环境限制使结论无法确定时，明确说明。
+- 仅当证据能够将根因与其他合理解释区分开时，才报告该根因。
+- 对已由 API、日志、持久化状态或静态源码充分证明的结论，不要求浏览器证据；当结论依赖真实浏览器行为时必须提供浏览器证据。
+- 记录确切的浏览器执行器，不要把宿主浏览器或通用自动化通道称为“Playwright”。区分 Playwright MCP 与 Playwright Test。
