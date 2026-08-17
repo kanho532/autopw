@@ -13,6 +13,7 @@ description: 审查受信任的本地 Web 应用源码、Git 变更，或仅审�
 - 起草报告前，阅读 `../autopw-exploratory-testing/assets/report-template.md`，并严格遵循其中的标题、章节顺序、问题表、汇总表和术语。不要自行设计更简短的报告格式。
 - 在分配严重级别或类别前，阅读 `../autopw-exploratory-testing/references/issue-taxonomy.md`。
 - 执行测试前阅读 [deterministic-orchestration.md](references/deterministic-orchestration.md)，使用其中的结构化计划、证据、计时、重放和 MCP 门禁协议。
+- 交付报告前运行 [autopw-validate.mjs](scripts/autopw-validate.mjs)，将整次审查的计划、通道结果、路由决定、证据路径、计时和报告链接作为一个整体进行验收。
 - 生成一份自包含报告。除非用户明确要求比较，否则不要依赖旧的 `dogfood-output/`、`autopw-output/`、历史报告或历史截图。新建输出目录或使用清晰的本次运行专属制品路径，不要删除用户数据。
 
 ## 输入与边界
@@ -145,6 +146,8 @@ Playwright Test 完成后，将 `expected_case_ids`、实际尝试和 API 对照
 
 在“测试覆盖”或“环境与清理”中增加执行时间汇总：记录审查开始/结束/总耗时、各通道耗时，以及每个用例每次尝试的 `started_at`、`finished_at` 和 `duration_ms`。对清洁重放分别列出两次时间，不合并或覆盖第一次失败。
 
+报告完成后运行 `node <skill-dir>/scripts/autopw-validate.mjs --plan <execution-plan.json> --run-root <runs/run-id> --report <report.md> --output <validation.json>`。最终交付必须使用 `--output` 保存验收制品；只读预检可以省略该参数，此时相同 JSON 只写到 stdout。退出码为 `0` 才能交付；退出码为 `1` 时修正规则指出的计划覆盖、结果、证据、计时、路由或报告问题后重跑，不得删除失败用例或放宽冻结断言来使验证通过。退出码为 `2` 表示命令或输入错误。
+
 ## 完成检查清单
 
 - 在执行浏览器测试前阅读源码和仓库说明。
@@ -167,4 +170,5 @@ Playwright Test 完成后，将 `expected_case_ids`、实际尝试和 API 对照
 - 核对每个通道、用例和尝试都有开始、结束和耗时记录，且时间与持续时间一致。
 - 写明实际使用的浏览器执行器和测试运行器，不要混淆 Playwright MCP、Playwright Test 或宿主浏览器。
 - 验证每个制品链接存在。
+- 运行 `autopw-validate.mjs` 并确认最终结果为 `valid: true`。
 - 只停止本次审查启动的服务，并保持用户变更不受影响。

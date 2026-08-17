@@ -76,6 +76,10 @@ WorkBuddy 当前按 Skills 与 MCP 两部分接入：
 
 每次审查记录整体、通道、用例和尝试的 `started_at`、`finished_at` 与 `duration_ms`。Playwright Test 使用内置 reporter 自动记录每个 `test()`；API 和状态用例遵循相同结果结构。清洁重放保留两次独立计时，不用后一次覆盖首次失败。
 
+## 最终输出验证
+
+`skills/autopw-web-audit/scripts/autopw-validate.mjs` 是审查交付前的确定性验收门。它交叉检查冻结计划、lane 结果、浏览器路由、MCP 诊断闭环、证据文件、计时、报告用例引用和 PASS/FAIL/BLOCKED/NOT_RUN 计数；结果为 `valid: true` 时才允许交付报告。验证器只约束制品一致性，不替代 Agent 对业务、测试 Oracle、根因和严重级别的判断。
+
 ## Commit 到工作区增量审查
 
 示例请求：
@@ -88,7 +92,7 @@ AutoPW 会解析基线 SHA，使用 `git diff <baseline> --` 获取 tracked work
 
 ## 开发校验
 
-确定性路由器和 Playwright Test 计时 reporter 使用 Node 内置测试运行器：
+确定性路由器、最终输出验证器和 Playwright Test 计时 reporter 使用 Node 内置测试运行器：
 
 ```bash
 node --test skills/autopw-web-audit/scripts/tests/*.test.mjs skills/autopw-web-audit/scripts/tests/*.test.cjs

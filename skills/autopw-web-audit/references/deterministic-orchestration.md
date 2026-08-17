@@ -22,6 +22,7 @@
 - 不使用哈希表示失败。直接保存并逐字段比较可读的 `failure_signature`。
 - 每个用例和每次尝试记录 ISO 8601 的开始、结束时间以及 `duration_ms`。
 - 每个工作器只写自己的运行目录并返回结构化结果，不直接定级、编号或扩展范围。
+- 最终报告必须通过 `autopw-validate.mjs` 的整体验收后才能交付。
 
 ## 2. 执行计划
 
@@ -178,6 +179,19 @@ autopw-output/runs/<run-id>/
 ```
 
 主协调器校验结果字段、计时和证据路径后再回填计划。工作器只提交候选问题和候选新增覆盖；主协调器统一分配 `DISCOVERED-<n>` 与问题编号，并按根因去重。
+
+报告完成后运行：
+
+```bash
+node <skill-dir>/scripts/autopw-validate.mjs \
+  --plan <audit-root>/execution-plan.json \
+  --run-root <audit-root>/runs/<run-id> \
+  --report <audit-root>/report.md \
+  --output <audit-root>/validation.json
+```
+
+验证器检查计划 ID、用例覆盖、尝试顺序、通道归属、冻结时间、路由终态、MCP 诊断闭环、证据路径、报告本地链接、用例引用和最终状态计数。`valid: false` 是制品或流程错误，不得通过删除失败用例、改变冻结断言或手工伪造计数绕过。
+最终交付使用 `--output` 保存 `validation.json`；只读或中间预检可以省略该参数并从 stdout 读取同一结果。
 
 ## 10. 降级
 
