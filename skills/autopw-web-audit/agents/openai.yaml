@@ -1,4 +1,4 @@
 interface:
   display_name: "AutoPW Web 应用审查"
-  short_description: "审查代码、设计用例并验证 Web 应用"
-  default_prompt: "使用 $autopw-web-audit 审查此 Web 应用，执行适用的证据通道，并编写要求的中文报告。"
+  short_description: "确定性并行 API 与 Playwright Test 的 Web 审查"
+  default_prompt: "使用 $autopw-web-audit 并行执行 API 与 Playwright Test，仅在确定性门禁允许时使用 MCP，并生成带耗时的中文报告。"

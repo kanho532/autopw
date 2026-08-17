@@ -14,17 +14,27 @@
 
 不要从磁盘根目录进行无界搜索。Windows 上优先调用 `.cmd`/`.exe` 的绝对路径；发现 PATH 只差一个移动后的目录时，使用实际路径并在报告中记录。
 
-## 2. 浏览器/Playwright 回退顺序
+## 2. Playwright Test 发现与 MCP 门禁
 
-对于步骤和断言已知的浏览器用例，优先批量执行；对必须由浏览器证明的用例使用以下选择和回退顺序：
+浏览器用例默认且首先使用 Playwright Test。按顺序检查并记录：
 
-1. 项目已有 Playwright Test 配置和依赖：将步骤和断言明确的相关用例合并到本次运行专属的 `.spec.*`，通过一次运行器调用批量执行；
-2. 插件内置 `autopw-playwright` MCP：发现其 `browser_*` 工具，并用一次无害导航和页面快照确认服务与浏览器都能启动；仅用于页面结构未知的探索、批量测试失败后的复现与诊断，或浏览器与直接 API 行为不一致的情况；
-3. 当前宿主提供的浏览器控制能力；
-4. 已安装的浏览器自动化 CLI，例如可用的 `agent-browser`；先读取其自带核心使用说明，不猜测命令；
-5. 用户级或全局 Playwright，以及 `%LOCALAPPDATA%/ms-playwright`、系统 Chrome/Edge 等已有浏览器；
-6. 在工作区外创建一次性临时目录或虚拟环境，安装 Playwright 库，并优先复用已下载浏览器。不得修改目标项目的 `package.json`、lockfile 或虚拟环境；
-7. 如果策略、网络或系统条件禁止以上路径，才将对应浏览器用例标记为 `BLOCKED`，并保留 API、日志、状态和静态用例继续执行。
+1. 项目包装器或明确的 Playwright Test 命令；
+2. `package.json` 中的 Playwright Test script；
+3. `playwright.config.*`、项目内 `@playwright/test` 和已安装浏览器；
+4. 工作区或用户工具目录中的 Playwright Test、`%LOCALAPPDATA%/ms-playwright`、系统 Chrome/Edge；
+5. 工作区外、本次运行专属且版本固定的临时 Playwright Test 工具目录，优先复用已下载浏览器。不得修改目标项目的 `package.json`、lockfile 或虚拟环境；
+6. 如果策略、网络或系统条件禁止以上路径，才把对应用例标记为 `BLOCKED_INFRA`，同时继续 API、日志、状态和静态用例。
+
+只有现有测试同时覆盖相同角色、前置数据、步骤和冻结断言，且可以精确选择运行时，才复用该测试。其余浏览器用例写入本次运行专属 `.spec.*`。配置 [../scripts/autopw-playwright-reporter.cjs](../scripts/autopw-playwright-reporter.cjs)，先执行 `playwright test --list` 核对用例 ID 映射，再通过一次 runner 调用批量执行。
+
+Playwright Test 完成后，把冻结浏览器用例 ID 写入 `expected_case_ids`，再使用 [autopw-router.mjs](../scripts/autopw-router.mjs) 检查实际结果覆盖、计时和证据。缺失、重复、范围外或空结果直接无效，不能用 runner 的成功退出码代替用例结果。首次失败且证据不完整时只清洁重放一次；重放通过或失败签名变化时标记 `FLAKY_CANDIDATE`。此阶段不要启动或预检 MCP。
+
+只有路由决定为 `START_MCP` 时才发现插件内置 `autopw-playwright` MCP 或宿主浏览器能力。按顺序尝试：
+
+1. 插件内置 `autopw-playwright` MCP；
+2. 当前宿主提供的浏览器控制能力；
+3. 已安装的浏览器自动化 CLI，例如 `agent-browser`；先读取其核心说明，不猜测命令；
+4. 如果以上路径均不可用，将该用例标记为 `BLOCKED_DIAGNOSTIC`，不影响其他用例。
 
 不要硬编码某个宿主对 MCP 工具生成的完整名称；按服务器标识 `autopw-playwright` 和 `browser_*` 能力发现工具。每次运行记录：
 
@@ -34,7 +44,7 @@
 
 只有实际调用 Playwright Test 执行测试文件时，才能写“Playwright Test 已运行”。使用 Playwright MCP 可以写“Playwright MCP 浏览器验证已运行”，两者不得合并表述。
 
-同一审查只执行一次 MCP 预检。相关业务流复用页面、登录状态和浏览器上下文，并只在关键检查点采集快照、网络和控制台证据；只有测试隔离要求存在时才创建新上下文。每个完整业务流结束后立即回填计划状态和证据；运行时发现以 `DISCOVERED-<n>` 追加，不修改冻结用例的范围或断言。
+同一审查只在首次 `START_MCP` 后执行一次 MCP 预检。相关诊断复用一个隔离页面、登录状态和浏览器上下文，并只在关键检查点采集快照、网络和控制台证据。MCP 不得重跑完整回归。工作器结束后由主协调器校验结果并回填计划；运行时发现以 `DISCOVERED-<n>` 追加，不修改冻结用例的范围或断言。
 
 安装临时依赖或下载新浏览器会产生网络/磁盘变更时，遵守当前环境的权限规则。优先复用已有浏览器，完成后清理一次性运行目录。
 
@@ -54,6 +64,8 @@
 | 视觉或可访问性问题 | 浏览器渲染、DOM/可访问树、截图 | 是 |
 
 “运行时已验证”并不等于“浏览器已验证”。API、日志或持久化状态同样可以完成运行时验证。报告中写明实际证据通道。
+
+每个通道、用例和尝试记录 ISO 8601 的 `started_at`、`finished_at` 与 `duration_ms`。Playwright Test 使用 AutoPW reporter 自动记录每个 `test()`；API 和其他通道使用相同字段。保留第一次失败和清洁重放各自的时间，不能用第二次结果覆盖第一次。
 
 ## 4. 上游故障后的继续策略
 

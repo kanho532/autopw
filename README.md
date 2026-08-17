@@ -1,6 +1,6 @@
 # AutoPW
 
-AutoPW 是一个代码驱动的 Web 应用审查插件：先读取源码并冻结风险测试计划，再通过 Playwright MCP、API、日志、状态回读和静态检查收集证据，最后生成固定格式的中文报告。
+AutoPW 是一个代码驱动的 Web 应用审查插件：先读取源码并冻结风险测试计划，再并行执行 API 与 Playwright Test，使用确定性规则仅在浏览器失败证据不足时启动 Playwright MCP 诊断，并通过日志、状态回读和静态检查补充证据，最后生成带每次测试耗时的固定格式中文报告。
 
 支持两种审查范围：完整审查 `FULL`，以及仅审查指定 commit 到当前工作区变化的 `COMMIT_TO_WORKTREE`。增量模式会覆盖该基线后的已提交、暂存、未暂存和未跟踪文件，并只测试受影响功能及其直接回归路径。
 
@@ -60,9 +60,21 @@ WorkBuddy 当前按 Skills 与 MCP 两部分接入：
 
 ## Playwright 执行边界
 
-插件内置的是 Playwright MCP，用于现场浏览器探索、DOM、Console、网络与截图证据。它不等同于 Playwright Test：当任务要求生成和重复执行 `.spec.ts` 回归测试时，AutoPW 仍优先使用项目已有的 Playwright Test 配置，或创建一次性审查工具目录。
+浏览器用例默认使用 Playwright Test。AutoPW 先复用能够精确覆盖冻结用例的现有测试，只为覆盖缺口生成本次运行专属 `.spec.*`，并通过一次 runner 调用批量执行。项目没有 Playwright Test 时，使用工作区外、本次运行专属且版本固定的临时工具目录，不修改目标项目依赖或 lockfile。
+
+插件内置的 Playwright MCP 只用于定向诊断，不参与初始执行。Playwright Test 首次失败且证据不足时总是清洁重放一次；即使同一业务不变量出现 API 通过、浏览器失败，也不能跳过重放。重放通过或失败特征变化时标记为疑似 flaky；只有相同失败再次出现、证据仍不足，且冻结的 MCP 触发条件与实际原因精确匹配时，确定性路由器才允许启动 MCP。
 
 报告必须分别记录浏览器执行器、测试运行器和回退通道，不得把内置浏览器或其他自动化工具笼统写成 Playwright。
+
+## 多 Agent 与确定性路由
+
+宿主支持子 agent 时，主协调器在计划冻结后并行派发独立的 API 和 Playwright Test 工作器，并继续静态审查。工作器只写各自的 `autopw-output/runs/<run-id>/<lane>/`；范围、计划、问题编号、定级和最终报告始终由主协调器单写。宿主不支持子 agent 时，使用相同结构化协议退化为隔离进程或串行执行。
+
+`skills/autopw-web-audit/scripts/autopw-router.mjs` 校验失败证据并输出固定动作。失败特征与重放执行上下文均以可读字段逐项保存和比较，不使用哈希；重放期间改变 runner、浏览器 build、spec、setup、步骤、断言或 locator 会直接判为无效，而不是 flaky 或 MCP 候选。任何 agent 都不得绕过路由决定主动启动 MCP。
+
+## 测试时间记录
+
+每次审查记录整体、通道、用例和尝试的 `started_at`、`finished_at` 与 `duration_ms`。Playwright Test 使用内置 reporter 自动记录每个 `test()`；API 和状态用例遵循相同结果结构。清洁重放保留两次独立计时，不用后一次覆盖首次失败。
 
 ## Commit 到工作区增量审查
 
@@ -73,3 +85,13 @@ WorkBuddy 当前按 Skills 与 MCP 两部分接入：
 ```
 
 AutoPW 会解析基线 SHA，使用 `git diff <baseline> --` 获取 tracked workspace 差异，再结合 `git status --short --untracked-files=all` 纳入未跟踪文件，并将冻结范围写入 `autopw-output/change-scope.md`。未变化且与变更无直接依赖的功能不进入问题清单或测试矩阵。
+
+## 开发校验
+
+确定性路由器和 Playwright Test 计时 reporter 使用 Node 内置测试运行器：
+
+```bash
+node --test skills/autopw-web-audit/scripts/tests/*.test.mjs skills/autopw-web-audit/scripts/tests/*.test.cjs
+```
+
+发布前还应运行 Skill 与插件验证器，并在不包含目标项目依赖修改的真实 Web 应用上执行一次前向测试。

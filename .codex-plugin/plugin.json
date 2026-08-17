@@ -1,7 +1,7 @@
 {
   "name": "autopw",
-  "version": "0.3.0",
-  "description": "Review web application code, freeze risk-based test plans, run independent evidence lanes in parallel, and generate Chinese QA reports.",
+  "version": "0.4.0+codex.20260817031855",
+  "description": "Review web applications with parallel API and Playwright Test lanes, deterministic MCP escalation, per-test timing, and Chinese QA reports.",
   "author": {
     "name": "kanho532",
     "url": "https://github.com/kanho532"
@@ -19,8 +19,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "AutoPW",
-    "shortDescription": "\u4ee3\u7801\u9a71\u52a8\u7684 Web \u5ba1\u67e5\u3001Playwright \u9a8c\u8bc1\u4e0e\u4e2d\u6587\u62a5\u544a\u3002",
-    "longDescription": "\u5ba1\u67e5\u6e90\u7801\u548c\u53d8\u66f4\uff0c\u751f\u6210\u5e76\u51bb\u7ed3\u98ce\u9669\u9a71\u52a8\u6d4b\u8bd5\u65b9\u6848\uff1b\u968f\u540e\u4f18\u5148\u4f7f\u7528\u63d2\u4ef6\u5185\u7f6e Playwright MCP\uff0c\u5e76\u7ed3\u5408 API\u3001\u65e5\u5fd7/\u72b6\u6001\u548c\u9759\u6001\u68c0\u67e5\u7b49\u901a\u9053\u9a8c\u8bc1\uff0c\u6700\u540e\u6309\u56fa\u5b9a\u4e2d\u6587\u6a21\u677f\u8f93\u51fa\u53ef\u590d\u73b0\u8bc1\u636e\u3002",
+    "shortDescription": "\u786e\u5b9a\u6027\u5e76\u884c API \u4e0e Playwright Test Web \u5ba1\u67e5\u3002",
+    "longDescription": "\u5ba1\u67e5\u6e90\u7801\u548c\u53d8\u66f4\uff0c\u51bb\u7ed3\u98ce\u9669\u6d4b\u8bd5\u8ba1\u5212\uff1b\u5e76\u884c\u6267\u884c API \u4e0e Playwright Test\uff0c\u8bb0\u5f55\u6bcf\u4e2a\u7528\u4f8b\u548c\u5c1d\u8bd5\u7684\u65f6\u95f4\uff0c\u53ea\u5728\u5931\u8d25\u8bc1\u636e\u4e0d\u8db3\u4e14\u786e\u5b9a\u6027\u8def\u7531\u5141\u8bb8\u65f6\u542f\u52a8 Playwright MCP \u8bca\u65ad\uff0c\u6700\u540e\u6309\u56fa\u5b9a\u4e2d\u6587\u6a21\u677f\u8f93\u51fa\u53ef\u590d\u73b0\u8bc1\u636e\u3002",
     "developerName": "kanho532",
     "category": "Developer Tools",
     "capabilities": [
