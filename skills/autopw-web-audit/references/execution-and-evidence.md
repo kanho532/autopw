@@ -23,18 +23,18 @@
 3. `playwright.config.*`、项目内 `@playwright/test` 和已安装浏览器；
 4. 工作区或用户工具目录中的 Playwright Test、`%LOCALAPPDATA%/ms-playwright`、系统 Chrome/Edge；
 5. 工作区外、本次运行专属且版本固定的临时 Playwright Test 工具目录，优先复用已下载浏览器。不得修改目标项目的 `package.json`、lockfile 或虚拟环境；
-6. 如果策略、网络或系统条件禁止以上路径，才把对应用例标记为 `BLOCKED_INFRA`，同时继续 API、日志、状态和静态用例。
+6. 如果策略、网络或系统条件禁止以上路径，写入结构化 `BLOCKED` 结果，同时继续 API、日志、状态和静态用例。
 
 只有现有测试同时覆盖相同角色、前置数据、步骤和冻结断言，且可以精确选择运行时，才复用该测试。其余浏览器用例写入本次运行专属 `.spec.*`。配置 [../scripts/autopw-playwright-reporter.cjs](../scripts/autopw-playwright-reporter.cjs)，先执行 `playwright test --list` 核对用例 ID 映射，再通过一次 runner 调用批量执行。
 
-Playwright Test 完成后，把冻结浏览器用例 ID 写入 `expected_case_ids`，再使用 [autopw-router.mjs](../scripts/autopw-router.mjs) 检查实际结果覆盖、计时和证据。缺失、重复、范围外或空结果直接无效，不能用 runner 的成功退出码代替用例结果。首次失败且证据不完整时只清洁重放一次；重放通过或失败签名变化时标记 `FLAKY_CANDIDATE`。此阶段不要启动或预检 MCP。
+Playwright Test 完成后，把冻结浏览器用例 ID 写入 `expected_case_ids`，再使用 [autopw-router.mjs](../scripts/autopw-router.mjs) 检查实际结果覆盖、计时和证据。缺失、重复、范围外或空结果直接无效，不能用 runner 的成功退出码代替用例结果。首次失败且证据不完整时只清洁重放一次；重放通过或失败签名变化时输出 `DONE` 与终态 `FLAKY`。此阶段不要启动或预检 MCP。
 
 只有路由决定为 `START_MCP` 时才发现插件内置 `autopw-playwright` MCP 或宿主浏览器能力。按顺序尝试：
 
 1. 插件内置 `autopw-playwright` MCP；
 2. 当前宿主提供的浏览器控制能力；
 3. 已安装的浏览器自动化 CLI，例如 `agent-browser`；先读取其核心说明，不猜测命令；
-4. 如果以上路径均不可用，将该用例标记为 `BLOCKED_DIAGNOSTIC`，不影响其他用例。
+4. 如果以上路径均不可用，将该用例以 `BLOCKED` 和 `DIAGNOSTIC_UNAVAILABLE` 结构化原因收口，不影响其他用例。
 
 不要硬编码某个宿主对 MCP 工具生成的完整名称；按服务器标识 `autopw-playwright` 和 `browser_*` 能力发现工具。每次运行记录：
 

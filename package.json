@@ -1,0 +1,18 @@
+{
+  "name": "autopw",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test skills/autopw-web-audit/scripts/tests/*.test.mjs skills/autopw-web-audit/scripts/tests/*.test.cjs",
+    "test:router": "node --test skills/autopw-web-audit/scripts/tests/autopw-router.test.mjs",
+    "test:integration": "node --test skills/autopw-web-audit/scripts/tests/autopw-integration.test.mjs"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  }
+}

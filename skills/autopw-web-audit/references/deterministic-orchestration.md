@@ -1,4 +1,4 @@
-# 确定性多 Agent 编排
+# 确定性执行编排
 
 ## 目录
 
@@ -15,6 +15,7 @@
 
 ## 1. 不变量
 
+- 固定数据边界：`Plan = intent`、`Result = execution facts`、`Decision = orchestration`、`Report = interpretation`，不得把运行时字段写回冻结计划。
 - 由主协调器唯一写入 `change-scope.md`、`test-plan.md`、`execution-plan.json` 和 `report.md`。
 - 在执行前冻结范围、用例、断言、依赖、资源锁、证据契约、执行器和 MCP 触发条件。
 - 将 `API` 作为直接请求证据通道，将 `PLAYWRIGHT_TEST` 作为浏览器用例默认执行器。
@@ -23,6 +24,8 @@
 - 每个用例和每次尝试记录 ISO 8601 的开始、结束时间以及 `duration_ms`。
 - 每个工作器只写自己的运行目录并返回结构化结果，不直接定级、编号或扩展范围。
 - 最终报告必须通过 `autopw-validate.mjs` 的整体验收后才能交付。
+
+Case 终态只能是 `PASS`、`FAIL`、`BLOCKED`、`NOT_RUN` 或 `FLAKY`。Router 动作只能是 `DONE`、`REPLAY_ONCE`、`START_MCP` 或 `INVALID_RESULT`；Router 使用独立 `final_status` 收口，禁止再把状态编码进动作名称。
 
 ## 2. 执行计划
 
@@ -40,7 +43,20 @@
 
 浏览器用例一律先冻结为 `PLAYWRIGHT_TEST`。不得因页面复杂、定位器未知或 MCP 可用而预先改为 MCP。
 
+`NOT_RUN` 是合法且必须显式写入的执行事实，不能由缺失结果推断。它必须包含 `not_run.code` 和 `not_run.detail`；code 只能是 `OUT_OF_SCOPE`、`UNSAFE_TO_EXECUTE`、`MISSING_CREDENTIAL`、`DEPENDENCY_UNAVAILABLE`、`UNSUPPORTED_ENVIRONMENT` 或 `USER_EXCLUDED`。`BLOCKED` 同样必须包含结构化 `blocked.code` 与 `blocked.detail`。完全缺少用例结果仍是无效运行。
+
 ## 3. 工作器
+
+优先通过 Orchestrator 运行冻结计划：
+
+```bash
+node <skill-dir>/scripts/autopw-run.mjs \
+  --plan <audit-root>/execution-plan.json \
+  --run-root <audit-root>/runs/<run-id> \
+  --executor-module <audit-root>/executors.mjs
+```
+
+执行器模块导出 `executors`、默认对象或 `createExecutors()`，并以统一接口实现各通道：`executeCase(testCase, context)`。支持的键为 `DIRECT_API`、`PLAYWRIGHT_TEST`、`STATIC`、`LOG_STATE` 和可选的 `MCP_DIAGNOSTIC`。Orchestrator 按依赖和资源锁调度，跨通道安全任务并行，同一变更资源锁上的任务串行。
 
 宿主支持子 agent 时，在计划冻结后并行派发两个有界任务：
 
@@ -139,7 +155,7 @@ port:8080
 
 路由器逐字段比较两次 `execution_context`，并要求 `isolation_id` 不同。任何 runner、browser build、spec、setup、步骤、断言、locator 或 storage-state 契约变化都输出 `INVALID_REPLAY_CONTEXT`，不能被认定为 flaky，也不能启动 MCP。
 
-第二次通过或失败签名变化时输出 `FLAKY_CANDIDATE`，不得启动 MCP。第二次失败证据完整时输出 `DONE_FAIL`。
+第二次通过或失败签名变化时输出 `DONE` 与 `final_status: FLAKY`，不得启动 MCP。第二次失败证据完整时输出 `DONE` 与 `final_status: FAIL`。
 
 ## 8. MCP 门禁
 
@@ -156,7 +172,7 @@ node <skill-dir>/scripts/autopw-router.mjs --input <router-input.json> --output 
 1. 同一业务不变量的 API 用例通过，且 Playwright Test 清洁重放出现相同失败签名、失败证据仍不完整；
 2. Playwright Test 清洁重放出现相同失败签名，且证据仍不完整。
 
-计划中必须预先冻结与实际原因精确匹配的 `mcp_trigger`。否则输出 `BLOCKED_DIAGNOSTIC`。基础设施错误、已充分证明的失败、第一次失败、重放后通过或签名变化均不得启动 MCP。
+计划中必须预先冻结与实际原因精确匹配的 `mcp_trigger`。否则输出 `DONE` 与 `final_status: BLOCKED`。基础设施错误、已充分证明的失败、第一次失败、重放后通过或签名变化均不得启动 MCP。
 
 MCP 工作器只回答一个明确诊断问题，默认最多一个会话、12 次有意义操作、5 分钟，并复用一个隔离浏览器上下文。它不得执行完整回归、修改源码、改变断言或直接写报告。
 
@@ -195,4 +211,4 @@ node <skill-dir>/scripts/autopw-validate.mjs \
 
 ## 10. 降级
 
-宿主不支持子 agent 时，使用相同 `execution-plan.json` 和路由脚本，将 API 与 Playwright Test 作为隔离进程并行；不能并行时串行执行。无法使用 MCP 时，仅把路由为 `START_MCP` 的用例标记为 `BLOCKED_DIAGNOSTIC`，其他通道继续。确定性来自冻结计划、结构化结果和脚本决策，不依赖宿主工具名称。
+宿主不支持子 agent 时，仍使用相同 `execution-plan.json`、Orchestrator 和执行器接口，通过隔离进程实现各通道；不能并行时串行执行。无法使用 MCP 时，以 `BLOCKED` 和 `DIAGNOSTIC_UNAVAILABLE` 原因收口，其他通道继续。确定性来自冻结计划、结构化结果和脚本决策，不依赖宿主工具名称。

@@ -10,6 +10,7 @@ import {
   routeCase,
   routeInput
 } from '../autopw-router.mjs'
+import { validateSchema } from '../lib/schema-validator.mjs'
 
 function timing(attempt, duration = 100) {
   const started = new Date(`2026-08-17T03:20:${String(attempt).padStart(2, '0')}.000Z`)
@@ -109,13 +110,15 @@ const incompleteEvidence = {
 
 test('PASS is terminal and does not start MCP', () => {
   const decision = routeCase(testCase([passAttempt()]), artifactsRoot)
-  assert.equal(decision.next_action, 'DONE_PASS')
+  assert.equal(decision.next_action, 'DONE')
+  assert.equal(decision.final_status, 'PASS')
   assert.equal(decision.timing.total_duration_ms, 100)
 })
 
 test('complete failure evidence is terminal', () => {
   const decision = routeCase(testCase([failAttempt(1, completeEvidence)]), artifactsRoot)
-  assert.equal(decision.next_action, 'DONE_FAIL')
+  assert.equal(decision.next_action, 'DONE')
+  assert.equal(decision.final_status, 'FAIL')
 })
 
 test('first incomplete failure replays exactly once', () => {
@@ -129,8 +132,9 @@ test('clean replay pass is a flaky candidate', () => {
     testCase([failAttempt(1, incompleteEvidence), passAttempt(2)]),
     artifactsRoot
   )
-  assert.equal(decision.next_action, 'FLAKY_CANDIDATE')
-  assert.equal(decision.reason_code, 'CLEAN_REPLAY_PASSED')
+  assert.equal(decision.next_action, 'DONE')
+  assert.equal(decision.final_status, 'FLAKY')
+  assert.equal(decision.reason_code, 'REPLAY.PASSED')
   assert.equal(decision.timing.total_duration_ms, 200)
 })
 
@@ -142,7 +146,8 @@ test('changed readable failure signature is a flaky candidate', () => {
     ]),
     artifactsRoot
   )
-  assert.equal(decision.next_action, 'FLAKY_CANDIDATE')
+  assert.equal(decision.next_action, 'DONE')
+  assert.equal(decision.final_status, 'FLAKY')
   assert.deepEqual(decision.signature_differences, ['locator'])
 })
 
@@ -152,7 +157,7 @@ test('same repeated failure with incomplete evidence starts MCP', () => {
     artifactsRoot
   )
   assert.equal(decision.next_action, 'START_MCP')
-  assert.equal(decision.reason_code, 'SAME_FAILURE_EVIDENCE_INCOMPLETE')
+  assert.equal(decision.reason_code, 'MCP.SAME_FAILURE_EVIDENCE_INCOMPLETE')
   assert.deepEqual(decision.failure_signature, signature())
 })
 
@@ -174,7 +179,7 @@ test('API/browser mismatch still performs one clean replay first', () => {
     artifactsRoot
   )
   assert.equal(decision.next_action, 'START_MCP')
-  assert.equal(decision.reason_code, 'API_BROWSER_MISMATCH')
+  assert.equal(decision.reason_code, 'MCP.API_BROWSER_MISMATCH')
 })
 
 test('API/browser mismatch with a changed replay signature is flaky, not MCP', () => {
@@ -191,7 +196,8 @@ test('API/browser mismatch with a changed replay signature is flaky, not MCP', (
     ),
     artifactsRoot
   )
-  assert.equal(decision.next_action, 'FLAKY_CANDIDATE')
+  assert.equal(decision.next_action, 'DONE')
+  assert.equal(decision.final_status, 'FLAKY')
 })
 
 test('MCP reason must exactly match the frozen trigger', () => {
@@ -201,7 +207,8 @@ test('MCP reason must exactly match the frozen trigger', () => {
     }),
     artifactsRoot
   )
-  assert.equal(decision.next_action, 'BLOCKED_DIAGNOSTIC')
+  assert.equal(decision.next_action, 'DONE')
+  assert.equal(decision.final_status, 'BLOCKED')
   assert.equal(decision.required_trigger, 'PLAYWRIGHT_FAILS_WITH_INCOMPLETE_EVIDENCE')
 })
 
@@ -210,7 +217,7 @@ test('failure signature must contain every readable field', () => {
   delete attempt.failure_signature.route
   const decision = routeCase(testCase([attempt]), artifactsRoot)
   assert.equal(decision.next_action, 'INVALID_RESULT')
-  assert.deepEqual(decision.missing_evidence, ['failure_signature.route'])
+  assert.deepEqual(decision.missing_evidence, ['/attempts/0/failure_signature:required'])
 })
 
 test('MCP cannot start unless the trigger was frozen', () => {
@@ -220,7 +227,8 @@ test('MCP cannot start unless the trigger was frozen', () => {
     }),
     artifactsRoot
   )
-  assert.equal(decision.next_action, 'BLOCKED_DIAGNOSTIC')
+  assert.equal(decision.next_action, 'DONE')
+  assert.equal(decision.final_status, 'BLOCKED')
 })
 
 test('infrastructure failure never starts MCP', () => {
@@ -246,7 +254,8 @@ test('infrastructure failure never starts MCP', () => {
     ]),
     artifactsRoot
   )
-  assert.equal(decision.next_action, 'BLOCKED_INFRA')
+  assert.equal(decision.next_action, 'DONE')
+  assert.equal(decision.final_status, 'BLOCKED')
 })
 
 test('timing inconsistency is rejected', () => {
@@ -254,7 +263,7 @@ test('timing inconsistency is rejected', () => {
   attempt.timing.duration_ms = 9999
   const decision = routeCase(testCase([attempt]), artifactsRoot)
   assert.equal(decision.next_action, 'INVALID_RESULT')
-  assert.equal(decision.reason_code, 'INVALID_TIMING')
+  assert.equal(decision.reason_code, 'EXECUTION.INVALID_TIMING')
 })
 
 test('signature comparison is readable and normalizes whitespace', () => {
@@ -278,7 +287,7 @@ test('changed replay setup is invalid instead of flaky or MCP', () => {
   second.execution_context = executionContext({ assertions: ['修正后的断言'] })
   const decision = routeCase(testCase([first, second]), artifactsRoot)
   assert.equal(decision.next_action, 'INVALID_RESULT')
-  assert.equal(decision.reason_code, 'INVALID_REPLAY_CONTEXT')
+  assert.equal(decision.reason_code, 'REPLAY.CONTEXT_CHANGED')
   assert.deepEqual(decision.context_differences, ['assertions'])
 })
 
@@ -288,7 +297,7 @@ test('clean replay must use a new isolation id', () => {
   second.isolation_id = first.isolation_id
   const decision = routeCase(testCase([first, second]), artifactsRoot)
   assert.equal(decision.next_action, 'INVALID_RESULT')
-  assert.equal(decision.reason_code, 'INVALID_REPLAY_CONTEXT')
+  assert.equal(decision.reason_code, 'REPLAY.CONTEXT_CHANGED')
   assert.equal(decision.isolation_reused, true)
 })
 
@@ -329,15 +338,20 @@ test('empty, missing, duplicate or unexpected browser runs are rejected', () => 
 })
 
 test('browser replay context is mandatory only in router input, not every evidence lane', () => {
-  const references = path.resolve(import.meta.dirname, '../../references')
-  const routerSchema = JSON.parse(
-    fs.readFileSync(path.join(references, 'router-input.schema.json'), 'utf8')
+  const attempt = passAttempt()
+  delete attempt.execution_context
+  delete attempt.isolation_id
+  assert.equal(
+    validateSchema('router-case', testCase([attempt])).valid,
+    false
   )
-  const laneSchema = JSON.parse(
-    fs.readFileSync(path.join(references, 'lane-result.schema.json'), 'utf8')
+  assert.equal(
+    validateSchema('lane-result', {
+      run_id: 'run-001',
+      lane: 'PLAYWRIGHT_TEST',
+      ...timing(1),
+      cases: [{ ...attempt, evidence: { artifact: 'result.json' } }]
+    }).valid,
+    true
   )
-  assert.ok(routerSchema.$defs.attempt.required.includes('execution_context'))
-  assert.ok(routerSchema.$defs.attempt.required.includes('isolation_id'))
-  assert.ok(!laneSchema.properties.cases.items.required.includes('execution_context'))
-  assert.ok(!laneSchema.properties.cases.items.required.includes('isolation_id'))
 })

@@ -1,40 +1,36 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://autopw.local/schemas/router-decision.schema.json",
-  "title": "AutoPW deterministic router decisions",
+  "title": "AutoPW orchestration decisions",
   "type": "object",
   "additionalProperties": false,
   "required": ["run_id", "decisions"],
   "properties": {
     "run_id": { "type": "string", "minLength": 1 },
-    "decisions": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["case_id", "next_action", "reason_code"],
-        "properties": {
-          "case_id": { "type": "string" },
-          "next_action": {
-            "enum": [
-              "DONE_PASS",
-              "DONE_FAIL",
-              "REPLAY_ONCE",
-              "START_MCP",
-              "FLAKY_CANDIDATE",
-              "BLOCKED_INFRA",
-              "BLOCKED_DIAGNOSTIC",
-              "INVALID_RESULT"
-            ]
-          },
-          "reason_code": { "type": "string" },
-          "missing_evidence": { "type": "array", "items": { "type": "string" } },
-          "signature_differences": { "type": "array", "items": { "type": "string" } },
-          "context_differences": { "type": "array", "items": { "type": "string" } },
-          "isolation_reused": { "type": "boolean" },
-          "failure_signature": { "type": "object" },
-          "timing": { "type": "object" }
-        }
-      }
+    "decisions": { "type": "array", "items": { "$ref": "#/$defs/decision" } }
+  },
+  "$defs": {
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "next_action", "reason_code"],
+      "properties": {
+        "case_id": { "type": "string", "minLength": 1 },
+        "next_action": { "enum": ["DONE", "REPLAY_ONCE", "START_MCP", "INVALID_RESULT"] },
+        "final_status": { "enum": ["PASS", "FAIL", "BLOCKED", "NOT_RUN", "FLAKY"] },
+        "reason_code": { "type": "string", "pattern": "^[A-Z]+(?:\\.[A-Z0-9_]+)+$" },
+        "required_trigger": { "type": "string" },
+        "missing_evidence": { "type": "array", "items": { "type": "string" } },
+        "signature_differences": { "type": "array", "items": { "type": "string" } },
+        "context_differences": { "type": "array", "items": { "type": "string" } },
+        "isolation_reused": { "type": "boolean" },
+        "failure_signature": { "type": "object" },
+        "timing": { "type": "object" }
+      },
+      "allOf": [
+        { "if": { "properties": { "next_action": { "const": "DONE" } } }, "then": { "required": ["final_status"] } },
+        { "if": { "properties": { "next_action": { "enum": ["REPLAY_ONCE", "START_MCP", "INVALID_RESULT"] } } }, "then": { "not": { "required": ["final_status"] } } }
+      ]
     }
   }
 }

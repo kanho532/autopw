@@ -32,6 +32,7 @@
 | 失败/发现问题 | {failed_count} |
 | 阻塞 | {blocked_count} |
 | 未执行/超出范围 | {not_run_count} |
+| 不稳定 | {flaky_count} |
 
 <!-- 上述用例状态必须从已回填的冻结测试计划计算，不得用问题数量代替失败用例数量。 -->
 
@@ -126,7 +127,7 @@
 
 | 用例 | 尝试 | 执行器 | 开始时间 | 结束时间 | 耗时（ms） | 结果 |
 |---|---:|---|---|---|---:|---|
-| {case_id} | {attempt} | {executor} | {started_at} | {finished_at} | {duration_ms} | {PASS/FAIL/BLOCKED/FLAKY_CANDIDATE} |
+| {case_id} | {attempt} | {executor} | {started_at} | {finished_at} | {duration_ms} | {PASS/FAIL/BLOCKED/NOT_RUN/FLAKY} |
 
 <!-- 清洁重放必须保留第一次和第二次的独立记录，不得用后一次覆盖首次失败。 -->
 

@@ -2,6 +2,8 @@
 
 AutoPW 是一个代码驱动的 Web 应用审查插件：先读取源码并冻结风险测试计划，再并行执行 API 与 Playwright Test，使用确定性规则仅在浏览器失败证据不足时启动 Playwright MCP 诊断，并通过日志、状态回读和静态检查补充证据，最后生成带每次测试耗时的固定格式中文报告。
 
+核心边界固定为：`Plan` 表达测试意图，`Result` 保存执行事实，`Decision` 只决定下一步动作，`Report` 负责解释结果。Agent 负责理解业务、设计用例与判定根因；`autopw-run.mjs`、Router 和 Validator 负责执行纪律。
+
 支持两种审查范围：完整审查 `FULL`，以及仅审查指定 commit 到当前工作区变化的 `COMMIT_TO_WORKTREE`。增量模式会覆盖该基线后的已提交、暂存、未暂存和未跟踪文件，并只测试受影响功能及其直接回归路径。
 
 ## 运行要求
@@ -70,7 +72,7 @@ WorkBuddy 当前按 Skills 与 MCP 两部分接入：
 
 宿主支持子 agent 时，主协调器在计划冻结后并行派发独立的 API 和 Playwright Test 工作器，并继续静态审查。工作器只写各自的 `autopw-output/runs/<run-id>/<lane>/`；范围、计划、问题编号、定级和最终报告始终由主协调器单写。宿主不支持子 agent 时，使用相同结构化协议退化为隔离进程或串行执行。
 
-`skills/autopw-web-audit/scripts/autopw-router.mjs` 校验失败证据并输出固定动作。失败特征与重放执行上下文均以可读字段逐项保存和比较，不使用哈希；重放期间改变 runner、浏览器 build、spec、setup、步骤、断言或 locator 会直接判为无效，而不是 flaky 或 MCP 候选。任何 agent 都不得绕过路由决定主动启动 MCP。
+`skills/autopw-web-audit/scripts/autopw-run.mjs` 读取冻结计划并调用统一的 `executeCase(testCase, context)` 执行器接口，按依赖和资源锁调度用例、自动完成一次清洁重放，并保存 lane 与 Router 制品。Router 只输出 `DONE`、`REPLAY_ONCE`、`START_MCP` 或 `INVALID_RESULT`；终态单独使用 `PASS`、`FAIL`、`BLOCKED`、`NOT_RUN` 或 `FLAKY`。失败特征与重放执行上下文均以可读字段逐项保存和比较。
 
 ## 测试时间记录
 
@@ -78,7 +80,7 @@ WorkBuddy 当前按 Skills 与 MCP 两部分接入：
 
 ## 最终输出验证
 
-`skills/autopw-web-audit/scripts/autopw-validate.mjs` 是审查交付前的确定性验收门。它交叉检查冻结计划、lane 结果、浏览器路由、MCP 诊断闭环、证据文件、计时、报告用例引用和 PASS/FAIL/BLOCKED/NOT_RUN 计数；结果为 `valid: true` 时才允许交付报告。验证器只约束制品一致性，不替代 Agent 对业务、测试 Oracle、根因和严重级别的判断。
+`skills/autopw-web-audit/scripts/autopw-validate.mjs` 是审查交付前的确定性验收门。JSON Schema 由 AJV 在运行时执行，Validator 只补充跨制品语义检查：冻结计划、lane 归属、浏览器路由、MCP 授权闭环、证据文件、计时、报告引用和五种终态计数。结果为 `valid: true` 时才允许交付报告。
 
 ## Commit 到工作区增量审查
 
@@ -92,10 +94,11 @@ AutoPW 会解析基线 SHA，使用 `git diff <baseline> --` 获取 tracked work
 
 ## 开发校验
 
-确定性路由器、最终输出验证器和 Playwright Test 计时 reporter 使用 Node 内置测试运行器：
+安装依赖并运行确定性路由器、Orchestrator、最终输出验证器和 Playwright Test reporter 测试：
 
 ```bash
-node --test skills/autopw-web-audit/scripts/tests/*.test.mjs skills/autopw-web-audit/scripts/tests/*.test.cjs
+npm ci
+npm test
 ```
 
 发布前还应运行 Skill 与插件验证器，并在不包含目标项目依赖修改的真实 Web 应用上执行一次前向测试。

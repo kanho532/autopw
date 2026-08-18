@@ -4,16 +4,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const FINAL_STATUSES = new Set(['PASS', 'FAIL', 'BLOCKED'])
-const CASE_ID_PATTERN = /^(?:API|BROWSER|STATIC|LOG_STATE|DISCOVERED)-\d+$/
-const TERMINAL_ROUTER_ACTIONS = new Set([
-  'DONE_PASS',
-  'DONE_FAIL',
-  'FLAKY_CANDIDATE',
-  'BLOCKED_INFRA',
-  'BLOCKED_DIAGNOSTIC',
-  'START_MCP'
-])
+import { validateSchema } from './lib/schema-validator.mjs'
+
+const FINAL_STATUSES = new Set(['PASS', 'FAIL', 'BLOCKED', 'NOT_RUN', 'FLAKY'])
 const ARTIFACT_KEYS = new Set([
   'artifact',
   'artifacts',
@@ -96,7 +89,8 @@ function reportCountSets(markdown) {
     '通过': 'PASS',
     '失败/发现问题': 'FAIL',
     '阻塞': 'BLOCKED',
-    '未执行/超出范围': 'NOT_RUN'
+    '未执行/超出范围': 'NOT_RUN',
+    '不稳定': 'FLAKY'
   }
   const tableCounts = {}
   for (const line of markdown.split(/\r?\n/)) {
@@ -108,16 +102,17 @@ function reportCountSets(markdown) {
     const status = labels[cells[0]]
     if (status && /^\d+$/.test(cells[1] ?? '')) tableCounts[status] = Number(cells[1])
   }
-  if (Object.keys(tableCounts).length === 4) matches.push(tableCounts)
+  if (Object.keys(tableCounts).length === 5) matches.push(tableCounts)
 
-  const pattern = /(\d+)\s*PASS[^\r\n]{0,40}?(\d+)\s*FAIL[^\r\n]{0,40}?(\d+)\s*BLOCKED[^\r\n]{0,40}?(\d+)\s*NOT_RUN/g
+  const pattern = /(\d+)\s*PASS[^\r\n]{0,40}?(\d+)\s*FAIL[^\r\n]{0,40}?(\d+)\s*BLOCKED[^\r\n]{0,40}?(\d+)\s*NOT_RUN[^\r\n]{0,40}?(\d+)\s*FLAKY/g
   for (const line of markdown.split(/\r?\n/).filter((item) => /冻结用例|状态/.test(item))) {
     for (const match of line.matchAll(pattern)) {
       matches.push({
         PASS: Number(match[1]),
         FAIL: Number(match[2]),
         BLOCKED: Number(match[3]),
-        NOT_RUN: Number(match[4])
+        NOT_RUN: Number(match[4]),
+        FLAKY: Number(match[5])
       })
     }
   }
@@ -163,14 +158,8 @@ function discoverLaneFiles(runRoot) {
 
 function validateArtifacts(result, runRoot, errors, counters) {
   if (!isObject(result.evidence) || Object.keys(result.evidence).length === 0) {
-    if (result.status === 'BLOCKED') {
-      if (typeof result.blocked_reason !== 'string' || result.blocked_reason.trim().length === 0) {
-        addError(errors, 'MISSING_BLOCKED_REASON', `${result.case_id} is BLOCKED without a reason`, {
-          case_id: result.case_id
-        })
-      }
-    } else {
-      addError(errors, 'MISSING_EVIDENCE', `${result.case_id} has no evidence`, {
+    if (!['BLOCKED', 'NOT_RUN'].includes(result.status)) {
+      addError(errors, 'EVIDENCE.MISSING', `${result.case_id} has no evidence`, {
         case_id: result.case_id
       })
     }
@@ -180,12 +169,12 @@ function validateArtifacts(result, runRoot, errors, counters) {
     const candidate = resolveLocalPath(item.value, runRoot)
     counters.artifacts_checked += 1
     if (!item.sourceReference && !within(runRoot, candidate)) {
-      addError(errors, 'ARTIFACT_OUTSIDE_RUN_ROOT', `${result.case_id} artifact escapes run root`, {
+      addError(errors, 'ARTIFACT.OUTSIDE_RUN_ROOT', `${result.case_id} artifact escapes run root`, {
         case_id: result.case_id,
         path: item.value
       })
     } else if (!fs.existsSync(candidate)) {
-      addError(errors, 'MISSING_ARTIFACT', `${result.case_id} evidence path does not exist`, {
+      addError(errors, 'ARTIFACT.MISSING', `${result.case_id} evidence path does not exist`, {
         case_id: result.case_id,
         path: item.value
       })
@@ -206,7 +195,7 @@ export function validateRun({ planPath, runRoot, reportPath }) {
     ['run_root', absoluteRunRoot],
     ['report', absoluteReport]
   ]) {
-    if (!fs.existsSync(candidate)) addError(errors, 'MISSING_INPUT', `${label} does not exist`, { path: candidate })
+    if (!fs.existsSync(candidate)) addError(errors, 'INPUT.MISSING', `${label} does not exist`, { path: candidate })
   }
   if (errors.length > 0) return finish(null, [], {}, errors, warnings, counters)
 
@@ -214,33 +203,30 @@ export function validateRun({ planPath, runRoot, reportPath }) {
   try {
     plan = readJson(absolutePlan)
   } catch (error) {
-    addError(errors, 'INVALID_PLAN_JSON', error.message, { path: absolutePlan })
+    addError(errors, 'PLAN.INVALID_JSON', error.message, { path: absolutePlan })
     return finish(null, [], {}, errors, warnings, counters)
   }
 
-  if (typeof plan.run_id !== 'string' || plan.run_id.length === 0 || !Array.isArray(plan.cases)) {
-    addError(errors, 'INVALID_PLAN', 'Plan requires run_id and cases')
-    return finish(plan.run_id ?? null, [], {}, errors, warnings, counters)
+  const planSchema = validateSchema('execution-plan', plan)
+  if (!planSchema.valid) {
+    addError(errors, 'PLAN.INVALID_SCHEMA', 'Execution plan does not match its schema', {
+      path: absolutePlan,
+      schema_errors: planSchema.errors
+    })
+    return finish(plan?.run_id ?? null, [], {}, errors, warnings, counters)
   }
 
   const planById = new Map()
   for (const testCase of plan.cases) {
-    if (!isObject(testCase) || typeof testCase.id !== 'string' || testCase.id.length === 0) {
-      addError(errors, 'INVALID_PLAN_CASE', 'Every plan case requires an id')
-      continue
-    }
-    if (!CASE_ID_PATTERN.test(testCase.id)) {
-      addError(errors, 'INVALID_PLAN_ID', `Invalid plan id: ${testCase.id}`, { case_id: testCase.id })
-    }
     if (planById.has(testCase.id)) {
-      addError(errors, 'DUPLICATE_PLAN_ID', `Duplicate plan id: ${testCase.id}`, { case_id: testCase.id })
+      addError(errors, 'PLAN.DUPLICATE_CASE', `Duplicate plan id: ${testCase.id}`, { case_id: testCase.id })
     } else {
       planById.set(testCase.id, testCase)
     }
   }
 
   const laneFiles = discoverLaneFiles(absoluteRunRoot)
-  if (laneFiles.length === 0) addError(errors, 'NO_LANE_RESULTS', 'No lane-result.json files found')
+  if (laneFiles.length === 0) addError(errors, 'EXECUTION.NO_LANE_RESULTS', 'No lane-result.json files found')
   const laneDocuments = []
   const primaryByCase = new Map()
   const mcpByCase = new Map()
@@ -250,40 +236,41 @@ export function validateRun({ planPath, runRoot, reportPath }) {
     try {
       lane = readJson(laneFile)
     } catch (error) {
-      addError(errors, 'INVALID_LANE_JSON', error.message, { path: laneFile })
+      addError(errors, 'EXECUTION.INVALID_JSON', error.message, { path: laneFile })
+      continue
+    }
+    const laneSchema = validateSchema('lane-result', lane)
+    if (!laneSchema.valid) {
+      addError(errors, 'EXECUTION.INVALID_SCHEMA', 'Lane result does not match its schema', {
+        path: laneFile,
+        schema_errors: laneSchema.errors
+      })
       continue
     }
     laneDocuments.push(lane)
     if (lane.run_id !== plan.run_id) {
-      addError(errors, 'RUN_ID_MISMATCH', `${laneFile} has a different run_id`, { path: laneFile })
+      addError(errors, 'RUN.ID_MISMATCH', `${laneFile} has a different run_id`, { path: laneFile })
     }
     for (const field of timingErrors(lane, `lane:${lane.lane ?? 'UNKNOWN'}`)) {
-      addError(errors, 'INVALID_TIMING', `Invalid timing field: ${field}`, { path: laneFile })
-    }
-    if (!Array.isArray(lane.cases)) {
-      addError(errors, 'INVALID_LANE', `${laneFile} requires cases`, { path: laneFile })
-      continue
+      addError(errors, 'EXECUTION.INVALID_TIMING', `Invalid timing field: ${field}`, { path: laneFile })
     }
     for (const result of lane.cases) {
       const planCase = planById.get(result?.case_id)
       if (!planCase) {
-        addError(errors, 'UNPLANNED_CASE', `Lane contains unplanned case: ${result?.case_id}`, {
+        addError(errors, 'EXECUTION.UNPLANNED_CASE', `Lane contains unplanned case: ${result?.case_id}`, {
           case_id: result?.case_id,
           path: laneFile
         })
         continue
       }
-      if (!FINAL_STATUSES.has(result.status)) {
-        addError(errors, 'INVALID_CASE_STATUS', `${result.case_id} has invalid status`, { case_id: result.case_id })
-      }
       if (!allowedLane(planCase, lane.lane)) {
-        addError(errors, 'WRONG_LANE', `${result.case_id} cannot run in ${lane.lane}`, {
+        addError(errors, 'EXECUTION.WRONG_LANE', `${result.case_id} cannot run in ${lane.lane}`, {
           case_id: result.case_id,
           path: laneFile
         })
       }
       for (const field of timingErrors(result.timing, `case:${result.case_id}:attempt:${result.attempt}`)) {
-        addError(errors, 'INVALID_TIMING', `Invalid timing field: ${field}`, { case_id: result.case_id })
+        addError(errors, 'EXECUTION.INVALID_TIMING', `Invalid timing field: ${field}`, { case_id: result.case_id })
       }
       validateArtifacts(result, absoluteRunRoot, errors, counters)
       const collection = lane.lane === 'MCP_DIAGNOSTIC' ? mcpByCase : primaryByCase
@@ -295,9 +282,9 @@ export function validateRun({ planPath, runRoot, reportPath }) {
   const frozenAt = Date.parse(plan.frozen_at)
   const laneStarts = laneDocuments.map((lane) => Date.parse(lane.started_at)).filter(Number.isFinite)
   if (!Number.isFinite(frozenAt)) {
-    addError(errors, 'INVALID_FROZEN_AT', 'Plan frozen_at is not a valid date-time')
+    addError(errors, 'PLAN.INVALID_FROZEN_AT', 'Plan frozen_at is not a valid date-time')
   } else if (laneStarts.some((started) => started < frozenAt)) {
-    addError(errors, 'EXECUTION_BEFORE_FREEZE', 'At least one lane started before the plan was frozen')
+    addError(errors, 'EXECUTION.BEFORE_FREEZE', 'At least one lane started before the plan was frozen')
   }
 
   for (const [collection, duplicateCode] of [
@@ -309,14 +296,14 @@ export function validateRun({ planPath, runRoot, reportPath }) {
       const unique = new Set(attempts)
       const expected = attempts.length === 2 ? [1, 2] : [1]
       if (unique.size !== attempts.length || JSON.stringify(attempts) !== JSON.stringify(expected)) {
-        addError(errors, 'INVALID_ATTEMPT_SEQUENCE', `${caseId} attempts must be [1] or [1,2]`, {
+        addError(errors, 'EXECUTION.INVALID_ATTEMPT_SEQUENCE', `${caseId} attempts must be [1] or [1,2]`, {
           case_id: caseId,
           attempts
         })
       }
       const lanes = new Set(entries.map((entry) => entry.lane))
       if (lanes.size > 1) {
-        addError(errors, duplicateCode, `${caseId} appears in multiple ${duplicateCode === 'DUPLICATE_PRIMARY_LANE' ? 'primary' : 'MCP'} lanes`, {
+        addError(errors, `EXECUTION.${duplicateCode}`, `${caseId} appears in multiple ${duplicateCode === 'DUPLICATE_PRIMARY_LANE' ? 'primary' : 'MCP'} lanes`, {
           case_id: caseId
         })
       }
@@ -328,21 +315,38 @@ export function validateRun({ planPath, runRoot, reportPath }) {
   const decisionsById = new Map()
   if (browserIds.length > 0) {
     if (!fs.existsSync(routerPath)) {
-      addError(errors, 'MISSING_ROUTER_DECISIONS', 'Browser cases require router/decisions.json', { path: routerPath })
+      addError(errors, 'ROUTER.MISSING_DECISIONS', 'Browser cases require router/decisions.json', { path: routerPath })
     } else {
       try {
         const router = readJson(routerPath)
-        if (router.run_id !== plan.run_id) addError(errors, 'RUN_ID_MISMATCH', 'Router run_id differs from plan')
-        for (const decision of router.decisions ?? []) {
-          if (decisionsById.has(decision.case_id)) {
-            addError(errors, 'DUPLICATE_ROUTER_DECISION', `Duplicate router decision: ${decision.case_id}`)
-          } else {
-            decisionsById.set(decision.case_id, decision)
+        const routerSchema = validateSchema('router-decision', router)
+        if (!routerSchema.valid) {
+          addError(errors, 'ROUTER.INVALID_SCHEMA', 'Router decision does not match its schema', {
+            path: routerPath,
+            schema_errors: routerSchema.errors
+          })
+        } else {
+          if (router.run_id !== plan.run_id) addError(errors, 'RUN.ID_MISMATCH', 'Router run_id differs from plan')
+          for (const decision of router.decisions) {
+            if (decisionsById.has(decision.case_id)) {
+              addError(errors, 'ROUTER.DUPLICATE_DECISION', `Duplicate router decision: ${decision.case_id}`)
+            } else {
+              decisionsById.set(decision.case_id, decision)
+            }
           }
         }
       } catch (error) {
-        addError(errors, 'INVALID_ROUTER_JSON', error.message, { path: routerPath })
+        addError(errors, 'ROUTER.INVALID_JSON', error.message, { path: routerPath })
       }
+    }
+  }
+
+  for (const caseId of mcpByCase.keys()) {
+    const decision = decisionsById.get(caseId)
+    if (decision?.next_action !== 'START_MCP') {
+      addError(errors, 'MCP.UNAUTHORIZED_EXECUTION', `${caseId} has MCP evidence without START_MCP authorization`, {
+        case_id: caseId
+      })
     }
   }
 
@@ -351,35 +355,40 @@ export function validateRun({ planPath, runRoot, reportPath }) {
     const primary = primaryByCase.get(caseId) ?? []
     if (primary.length === 0) {
       finalStatuses[caseId] = 'NOT_RUN'
-      addError(errors, 'MISSING_CASE_RESULT', `No primary result for ${caseId}`, { case_id: caseId })
+      addError(errors, 'EXECUTION.MISSING_RESULT', `No primary result for ${caseId}`, { case_id: caseId })
       continue
     }
     const latest = latestAttempt(primary).result
-    finalStatuses[caseId] = FINAL_STATUSES.has(latest.status) ? latest.status : 'NOT_RUN'
+    finalStatuses[caseId] = latest.status
     if (planCase.channel !== 'BROWSER') continue
 
     const decision = decisionsById.get(caseId)
     if (!decision) {
       continue
     }
-    if (!TERMINAL_ROUTER_ACTIONS.has(decision.next_action)) {
-      addError(errors, 'NON_TERMINAL_ROUTER_ACTION', `${caseId} ended at ${decision.next_action}`, {
+    if (!['DONE', 'START_MCP'].includes(decision.next_action)) {
+      addError(errors, 'ROUTER.NON_TERMINAL_ACTION', `${caseId} ended at ${decision.next_action}`, {
         case_id: caseId
       })
     }
-    if (decision.next_action === 'DONE_PASS' && latest.status !== 'PASS') {
-      addError(errors, 'ROUTER_STATUS_MISMATCH', `${caseId} DONE_PASS does not match lane status`, { case_id: caseId })
-    }
-    if (decision.next_action === 'DONE_FAIL' && latest.status !== 'FAIL') {
-      addError(errors, 'ROUTER_STATUS_MISMATCH', `${caseId} DONE_FAIL does not match lane status`, { case_id: caseId })
-    }
-    if (decision.next_action === 'BLOCKED_INFRA' || decision.next_action === 'BLOCKED_DIAGNOSTIC') {
-      finalStatuses[caseId] = 'BLOCKED'
+    if (decision.next_action === 'DONE') {
+      finalStatuses[caseId] = decision.final_status
+      const compatible =
+        decision.final_status === latest.status ||
+        (decision.final_status === 'FLAKY' && primary.length === 2) ||
+        (decision.final_status === 'BLOCKED' && latest.failure_type === 'INFRASTRUCTURE')
+      if (!compatible) {
+        addError(errors, 'ROUTER.STATUS_MISMATCH', `${caseId} final status does not match execution facts`, {
+          case_id: caseId,
+          lane_status: latest.status,
+          final_status: decision.final_status
+        })
+      }
     }
     if (decision.next_action === 'START_MCP') {
       const diagnostic = mcpByCase.get(caseId) ?? []
       if (diagnostic.length === 0) {
-        addError(errors, 'MISSING_MCP_RESULT', `${caseId} START_MCP has no MCP_DIAGNOSTIC result`, { case_id: caseId })
+        addError(errors, 'MCP.MISSING_RESULT', `${caseId} START_MCP has no MCP_DIAGNOSTIC result`, { case_id: caseId })
       } else if (latestAttempt(diagnostic).result.status === 'BLOCKED') {
         finalStatuses[caseId] = 'BLOCKED'
       } else {
@@ -390,11 +399,11 @@ export function validateRun({ planPath, runRoot, reportPath }) {
 
   for (const decisionId of decisionsById.keys()) {
     if (!browserIds.includes(decisionId)) {
-      addError(errors, 'UNEXPECTED_ROUTER_DECISION', `Router contains non-browser or unplanned case: ${decisionId}`)
+      addError(errors, 'ROUTER.UNEXPECTED_DECISION', `Router contains non-browser or unplanned case: ${decisionId}`)
     }
   }
   for (const browserId of browserIds) {
-    if (!decisionsById.has(browserId)) addError(errors, 'MISSING_ROUTER_DECISION', `No router decision for ${browserId}`)
+    if (!decisionsById.has(browserId)) addError(errors, 'ROUTER.MISSING_DECISION', `No router decision for ${browserId}`)
   }
 
   const markdown = fs.readFileSync(absoluteReport, 'utf8')
@@ -402,24 +411,26 @@ export function validateRun({ planPath, runRoot, reportPath }) {
     const candidate = resolveLocalPath(target, path.dirname(absoluteReport))
     counters.report_links_checked += 1
     if (!fs.existsSync(candidate)) {
-      addError(errors, 'MISSING_REPORT_LINK', 'Report local link does not exist', { path: target })
+      addError(errors, 'REPORT.MISSING_LINK', 'Report local link does not exist', { path: target })
     }
   }
   for (const caseId of planById.keys()) {
     if (!markdown.includes(caseId)) {
-      addError(errors, 'CASE_MISSING_FROM_REPORT', `${caseId} is not referenced in the report`, { case_id: caseId })
+      addError(errors, 'REPORT.MISSING_CASE', `${caseId} is not referenced in the report`, { case_id: caseId })
     }
   }
 
-  const counts = { PASS: 0, FAIL: 0, BLOCKED: 0, NOT_RUN: 0 }
-  for (const status of Object.values(finalStatuses)) counts[status] += 1
+  const counts = { PASS: 0, FAIL: 0, BLOCKED: 0, NOT_RUN: 0, FLAKY: 0 }
+  for (const status of Object.values(finalStatuses)) {
+    if (FINAL_STATUSES.has(status)) counts[status] += 1
+  }
   const reportedCounts = reportCountSets(markdown)
   if (reportedCounts.length === 0) {
-    addError(errors, 'MISSING_REPORT_COUNTS', 'Report must contain PASS/FAIL/BLOCKED/NOT_RUN counts')
+    addError(errors, 'REPORT.MISSING_COUNTS', 'Report must contain PASS/FAIL/BLOCKED/NOT_RUN/FLAKY counts')
   } else {
     for (const reported of reportedCounts) {
       if (JSON.stringify(reported) !== JSON.stringify(counts)) {
-        addError(errors, 'REPORT_COUNT_MISMATCH', 'Report counts do not match validated case results', {
+        addError(errors, 'REPORT.COUNT_MISMATCH', 'Report counts do not match validated case results', {
           expected: counts,
           actual: reported
         })
@@ -432,7 +443,7 @@ export function validateRun({ planPath, runRoot, reportPath }) {
 
 function finish(runId, laneFiles, counts, errors, warnings, counters, finalStatuses = {}) {
   errors.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
-  const normalizedCounts = { PASS: 0, FAIL: 0, BLOCKED: 0, NOT_RUN: 0, ...counts }
+  const normalizedCounts = { PASS: 0, FAIL: 0, BLOCKED: 0, NOT_RUN: 0, FLAKY: 0, ...counts }
   return {
     valid: errors.length === 0,
     run_id: runId,
@@ -484,7 +495,7 @@ function main() {
   process.exitCode = result.valid ? 0 : 1
 }
 
-if (pathToFileURL(process.argv[1]).href === import.meta.url) {
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   try {
     main()
   } catch (error) {
