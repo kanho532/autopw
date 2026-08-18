@@ -6,7 +6,16 @@ function normalized(value) {
 }
 
 function normalizedArray(value) {
-  return Array.isArray(value) ? value.map(normalized) : []
+  return Array.isArray(value)
+    ? value.map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return normalized(item)
+        return Object.fromEntries(
+          Object.entries(item)
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([key, nested]) => [key, normalized(nested)])
+        )
+      })
+    : []
 }
 
 export function compareSignatures(left, right) {

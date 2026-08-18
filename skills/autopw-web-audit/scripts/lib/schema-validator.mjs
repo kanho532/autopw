@@ -8,6 +8,7 @@ import addFormats from 'ajv-formats'
 const referencesRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../references')
 const schemaFiles = [
   'execution-plan.schema.json',
+  'audit-session.schema.json',
   'lane-result.schema.json',
   'router-input.schema.json',
   'router-decision.schema.json'
@@ -25,6 +26,7 @@ for (const fileName of schemaFiles) {
 
 const aliases = new Map([
   ['execution-plan', schemaIds.get('execution-plan.schema.json')],
+  ['audit-session', schemaIds.get('audit-session.schema.json')],
   ['lane-result', schemaIds.get('lane-result.schema.json')],
   ['router-input', schemaIds.get('router-input.schema.json')],
   ['router-case', `${schemaIds.get('router-input.schema.json')}#/$defs/router_case`],

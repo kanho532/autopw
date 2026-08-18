@@ -5,6 +5,7 @@ import path from 'node:path'
 import test from 'node:test'
 
 import { validateRun } from '../autopw-validate.mjs'
+import { EvidenceImporter } from '../evidence/import.mjs'
 
 function writeJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
@@ -20,7 +21,7 @@ function timing(started = '2026-08-17T00:00:01.000Z', duration = 100) {
 }
 
 function planCase(id, channel, executor) {
-  return {
+  const value = {
     id,
     channel,
     executor,
@@ -35,14 +36,20 @@ function planCase(id, channel, executor) {
     cleanup: [],
     mcp_trigger: channel === 'BROWSER' ? 'PLAYWRIGHT_FAILS_WITH_INCOMPLETE_EVIDENCE' : 'NONE'
   }
+  if (channel === 'BROWSER') {
+    value.locator_contract = [{ strategy: 'ROLE', value: 'button', name: '按钮', exact: true, unique: true }]
+  }
+  return value
 }
 
-function reportText({ PASS, FAIL, BLOCKED = 0, NOT_RUN = 0, FLAKY = 0 }) {
+function reportText({ PASS, FAIL, BLOCKED = 0, NOT_RUN = 0, FLAKY = 0 }, duration = 1000) {
   return `# Report
 
 API-001
 
 BROWSER-001
+
+审查会话总耗时: ${duration} ms
 
 | 用例状态 | 数量 |
 |---|---:|
@@ -108,6 +115,22 @@ function createFixture() {
   }
 
   writeJson(planPath, plan)
+  writeJson(path.join(runRoot, 'audit-session.json'), {
+    version: 1,
+    run_id: 'run-1',
+    started_at: '2026-08-17T00:00:00.000Z',
+    finished_at: '2026-08-17T00:00:01.000Z',
+    duration_ms: 1000,
+    invocations: [{
+      started_at: '2026-08-17T00:00:00.000Z',
+      finished_at: '2026-08-17T00:00:01.000Z',
+      duration_ms: 1000,
+      status: 'PASS',
+      resumed: false
+    }],
+    phases: [],
+    totals: {}
+  })
   writeJson(path.join(runRoot, 'api', 'lane-result.json'), apiLane)
   writeJson(path.join(runRoot, 'playwright', 'lane-result.json'), browserLane)
   writeJson(path.join(runRoot, 'router', 'decisions.json'), router)
@@ -242,7 +265,10 @@ test('accepts START_MCP only after a matching diagnostic lane closes it', () => 
   fixture.router.decisions[0].reason_code = 'MCP.SAME_FAILURE_EVIDENCE_INCOMPLETE'
   writeJson(path.join(fixture.runRoot, 'playwright', 'lane-result.json'), fixture.browserLane)
   writeJson(path.join(fixture.runRoot, 'router', 'decisions.json'), fixture.router)
-  writeJson(path.join(fixture.runRoot, 'mcp', 'mcp-evidence.json'), { diagnosed: true })
+  const stagedEvidence = path.join(fixture.root, 'mcp-staging.json')
+  writeJson(stagedEvidence, { diagnosed: true })
+  new EvidenceImporter({ runRoot: fixture.runRoot, sourceRoots: [fixture.root] })
+    .import(stagedEvidence, 'mcp/mcp-evidence.json')
   writeJson(path.join(fixture.runRoot, 'mcp', 'lane-result.json'), {
     run_id: 'run-1',
     lane: 'MCP_DIAGNOSTIC',

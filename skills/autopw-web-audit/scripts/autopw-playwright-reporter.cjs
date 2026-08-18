@@ -1,5 +1,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
+const { classifyPlaywrightFailure } = require('./playwright/failure-classifier.cjs')
 
 function iso(value) {
   return new Date(value).toISOString()
@@ -43,7 +44,8 @@ class AutoPWPlaywrightReporter {
       duration_ms: duration,
       errors: (result.errors ?? []).map((error) => ({
         message: error.message ?? null,
-        stack: error.stack ?? null
+        stack: error.stack ?? null,
+        failure_type: classifyPlaywrightFailure(error)
       })),
       attachments: (result.attachments ?? []).map((attachment) => ({
         name: attachment.name,

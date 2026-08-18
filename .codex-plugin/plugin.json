@@ -1,6 +1,6 @@
 {
   "name": "autopw",
-  "version": "0.4.0+codex.20260818063023",
+  "version": "0.5.0+codex.20260818073422",
   "description": "Review web applications with parallel API and Playwright Test lanes, deterministic MCP escalation, per-test timing, and Chinese QA reports.",
   "author": {
     "name": "kanho532",

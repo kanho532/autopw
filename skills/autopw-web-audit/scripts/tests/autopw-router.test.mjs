@@ -12,6 +12,8 @@ import {
 } from '../autopw-router.mjs'
 import { validateSchema } from '../lib/schema-validator.mjs'
 
+const LOGIN_LOCATOR = [{ strategy: 'ROLE', value: 'button', name: '登 录', exact: true, unique: true }]
+
 function timing(attempt, duration = 100) {
   const started = new Date(`2026-08-17T03:20:${String(attempt).padStart(2, '0')}.000Z`)
   return {
@@ -49,7 +51,7 @@ function executionContext(overrides = {}) {
     storage_state_contract: 'anonymous',
     steps: ['访问 /login'],
     assertions: ['登录按钮可见'],
-    locator_contract: ["getByRole('button', { name: '登 录' })"],
+    locator_contract: LOGIN_LOCATOR,
     ...overrides
   }
 }

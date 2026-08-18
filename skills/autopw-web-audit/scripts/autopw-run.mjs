@@ -2,6 +2,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 
 import { orchestrateRun } from './orchestration/run.mjs'
@@ -15,6 +16,12 @@ function parseArgs(argv) {
     if (['--plan', '--run-root', '--executor-module', '--output'].includes(item)) {
       args[item.slice(2).replaceAll('-', '_')] = argv[index + 1]
       index += 1
+    } else if (item === '--mcp-staging-root') {
+      if (!args.mcp_staging_roots) args.mcp_staging_roots = []
+      args.mcp_staging_roots.push(argv[index + 1])
+      index += 1
+    } else if (item === '--resume') {
+      args.resume = true
     } else if (item === '--help' || item === '-h') {
       args.help = true
     } else {
@@ -27,16 +34,28 @@ function parseArgs(argv) {
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   if (args.help || !args.plan || !args.run_root || !args.executor_module) {
-    process.stdout.write('Usage: node autopw-run.mjs --plan <execution-plan.json> --run-root <runs/run-id> --executor-module <executors.mjs> [--output <run-summary.json>]\n')
+    process.stdout.write('Usage: node autopw-run.mjs --plan <execution-plan.json> --run-root <runs/run-id> --executor-module <executors.mjs> [--resume] [--mcp-staging-root <dir>] [--output <run-summary.json>]\n')
     process.exitCode = args.help ? 0 : 2
     return
   }
   const plan = JSON.parse(fs.readFileSync(path.resolve(args.plan), 'utf8'))
-  const module = await import(pathToFileURL(path.resolve(args.executor_module)).href)
-  const executors = typeof module.createExecutors === 'function'
+  const executorPath = path.resolve(args.executor_module)
+  const module = await import(pathToFileURL(executorPath).href)
+  const created = typeof module.createExecutors === 'function'
     ? await module.createExecutors({ plan, runRoot: path.resolve(args.run_root) })
     : module.executors ?? module.default
-  const result = await orchestrateRun({ plan, runRoot: args.run_root, executors })
+  const executors = created?.executors ?? created
+  const lifecycle = created?.lifecycle ?? module.lifecycle ?? {}
+  const executorFingerprint = crypto.createHash('sha256').update(fs.readFileSync(executorPath)).digest('hex')
+  const result = await orchestrateRun({
+    plan,
+    runRoot: args.run_root,
+    executors,
+    lifecycle,
+    resume: Boolean(args.resume),
+    executorFingerprint,
+    mcpStagingRoots: (args.mcp_staging_roots ?? []).map((root) => path.resolve(root))
+  })
   const output = `${JSON.stringify(result, null, 2)}\n`
   if (args.output) {
     const outputPath = path.resolve(args.output)

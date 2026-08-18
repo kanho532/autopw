@@ -1,6 +1,6 @@
 ---
 name: autopw-web-audit
-description: 审查受信任的本地 Web 应用源码、Git 变更，或仅审查从指定 commit 到当前工作区的差异；冻结风险测试计划，通过 AutoPW Orchestrator 执行 API、Playwright Test、静态与状态通道，仅在确定性路由授权后使用 Playwright MCP，并生成带证据和耗时的中文报告。适用于 Web 审查、QA、回归测试、代码审查加测试、增量审查、测试方案或 Playwright 测试。不用于生产数据变更、负载测试或原生应用。
+description: 审查受信任的本地 Web 应用源码、Git 变更、两个 commit 之间的差异，或指定 commit 到当前工作区的差异；冻结风险测试计划，通过 AutoPW Orchestrator 执行 API、Playwright Test、静态与状态通道，仅在确定性路由授权后使用 Playwright MCP，并生成带完整会话耗时和证据的中文报告。适用于 Web 审查、QA、回归测试、代码审查加测试、增量审查、测试方案或 Playwright 测试。不用于生产数据变更、负载测试或原生应用。
 ---
 
 # AutoPW Web 应用审查
@@ -22,8 +22,9 @@ description: 审查受信任的本地 Web 应用源码、Git 变更，或仅审�
 
 - `FULL`：审查请求覆盖的应用或仓库。
 - `COMMIT_TO_WORKTREE`：仅审查用户指定 baseline 到当前工作区的差异及直接回归路径。
+- `COMMIT_TO_COMMIT`：仅审查解析后的 baseline SHA 到 head SHA 之间的已提交差异及直接回归路径，不混入工作区变更。
 
-使用 `COMMIT_TO_WORKTREE` 时，读取 [commit-range-review.md](references/commit-range-review.md)，解析完整 baseline SHA，并在计划前冻结 `autopw-output/change-scope.md`。纳入 baseline 后的提交、暂存、未暂存、删除、重命名和相关未跟踪文件。不要静默替换 baseline，也不要把无关旧缺陷归入本次发现。
+使用任一增量模式时，读取 [commit-range-review.md](references/commit-range-review.md)，解析所需的完整 SHA，并在计划前冻结 `autopw-output/change-scope.md`。不要静默替换 baseline，也不要把无关旧缺陷归入本次发现。
 
 ## 固定职责边界
 
@@ -45,7 +46,7 @@ description: 审查受信任的本地 Web 应用源码、Git 变更，或仅审�
 
 ### 2. 冻结测试意图
 
-根据风险设计正常流程、错误处理、边界值、鉴权、UI/API/持久化一致性、Console/网络和相邻回归用例。为每个用例记录 ID、来源、前置条件、步骤、断言、通道、执行器、证据契约、依赖、资源锁、变更性、清理和 MCP 触发条件。
+根据风险设计正常流程、错误处理、边界值、鉴权、UI/API/持久化一致性、Console/网络和相邻回归用例。为每个用例记录 ID、来源、前置条件、步骤、断言、通道、执行器、证据契约、依赖、资源锁、变更性、清理和 MCP 触发条件。浏览器用例还必须冻结结构化 `locator_contract`；文本、角色、标签和 placeholder 定位必须 `exact: true`，每个定位器必须 `unique: true`。
 
 同时写入：
 
@@ -68,13 +69,17 @@ node <skill-dir>/scripts/autopw-run.mjs \
   --output <audit-root>/run-summary.json
 ```
 
+执行器模块可以返回 `{ executors, lifecycle }`。在 `lifecycle.setup` 中通过 `runtime.spawn()` 启动服务；不得直接调用 Node `spawn()`。该入口会在 Windows 上包装 `.cmd/.bat`，登记 run 专属 PID，并在异常路径的 `finally` 中清理进程树。服务和测试数据必须使用 `runtime.isolation.env` 与 `runtime.isolation.data_prefix`，不得复用未知端口进程或共享内存数据库。
+
+进程异常后使用同一冻结计划、执行器和 run root 加 `--resume` 恢复。Orchestrator 只复用 fingerprint 匹配且已落盘的用例结果；不匹配时拒绝恢复。
+
 将 `DIRECT_API` 用于直接请求，将 `PLAYWRIGHT_TEST` 用于浏览器用例；按需使用 `STATIC` 与 `LOG_STATE`。在 Playwright 导航前捕获 console、pageerror、requestfailed 和相关响应。只为覆盖缺口生成本次运行专属 spec，不修改目标项目依赖。
 
 Orchestrator 按依赖和资源锁调度安全并行任务，自动执行一次允许的清洁重放，并写入 lane 与 Router 结果。若宿主无法使用 Orchestrator，才按同一 Schema 和接口使用隔离进程降级，不得由 Agent 自行改变路由结果。
 
 ### 4. 处理授权诊断
 
-默认完全不启动或预检 Playwright MCP。只有 `router/decisions.json` 对具体用例输出 `START_MCP` 时，才使用 `MCP_DIAGNOSTIC` 执行器回答决定中的单一问题；保留授权决定与诊断 lane。若原因为 API/浏览器不一致，调用同级 `autopw-browser-diagnostics` Skill。不要用 MCP 重跑完整回归或改变冻结断言。
+默认完全不启动或预检 Playwright MCP。只有 `router/decisions.json` 对具体用例输出 `START_MCP` 时，才使用 `MCP_DIAGNOSTIC` 执行器回答决定中的单一问题；保留授权决定与诊断 lane。通过 `--mcp-staging-root` 声明宿主可写目录，并用执行上下文中的 `evidence_importer.import()` 把证据复制进 run root；不要手工复制或直接引用外部证据。若原因为 API/浏览器不一致，调用同级 `autopw-browser-diagnostics` Skill。不要用 MCP 重跑完整回归或改变冻结断言。
 
 ### 5. 解释并验收
 
@@ -84,7 +89,7 @@ Orchestrator 按依赖和资源锁调度安全并行任务，自动执行一次�
 - 静态发现（未完成运行时验证）；
 - 阻塞、未执行与不稳定用例。
 
-从最终用例状态计算五种状态数量，不要用问题数量代替失败用例数量。验证所有本地链接存在，并记录整体、lane、用例与每次尝试的计时。
+从最终用例状态计算五种状态数量，不要用问题数量代替失败用例数量。验证所有本地链接存在，并记录 `audit-session.json` 的审查会话总耗时、启动、首次执行、清洁重放、MCP、制品写入、清理和恢复间隔，以及 lane、用例与每次尝试的计时。
 
 运行最终验收：
 
@@ -106,5 +111,6 @@ node <skill-dir>/scripts/autopw-validate.mjs \
 - 为每个冻结用例显式产出结果；`NOT_RUN` 和 `BLOCKED` 使用结构化 reason。
 - 不绕过 Router 启动 MCP，不把 `FLAKY` 当作 `PASS`。
 - 检查制品均位于本次 run root，且报告链接可解析。
+- 使用 reporter 给出的结构化失败类型；含 `expect(...)` 的轮询超时属于 `ASSERTION`，不能仅因错误文本出现 Timeout 而标为 `TIMEOUT`。
 - 运行全部仓库测试、Skill 校验与 `autopw-validate.mjs`。
 - 只停止本次启动的服务，保留用户工作区改动。

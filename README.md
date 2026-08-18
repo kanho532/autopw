@@ -4,7 +4,7 @@ AutoPW 是一个代码驱动的 Web 应用审查插件：先读取源码并冻�
 
 核心边界固定为：`Plan` 表达测试意图，`Result` 保存执行事实，`Decision` 只决定下一步动作，`Report` 负责解释结果。Agent 负责理解业务、设计用例与判定根因；`autopw-run.mjs`、Router 和 Validator 负责执行纪律。
 
-支持两种审查范围：完整审查 `FULL`，以及仅审查指定 commit 到当前工作区变化的 `COMMIT_TO_WORKTREE`。增量模式会覆盖该基线后的已提交、暂存、未暂存和未跟踪文件，并只测试受影响功能及其直接回归路径。
+支持三种审查范围：完整审查 `FULL`、指定 commit 到当前工作区的 `COMMIT_TO_WORKTREE`，以及两个已提交 SHA 之间的 `COMMIT_TO_COMMIT`。两种增量模式均只测试受影响功能及其直接回归路径，且不会相互混入工作区语义。
 
 ## 运行要求
 
@@ -74,9 +74,11 @@ WorkBuddy 当前按 Skills 与 MCP 两部分接入：
 
 `skills/autopw-web-audit/scripts/autopw-run.mjs` 读取冻结计划并调用统一的 `executeCase(testCase, context)` 执行器接口，按依赖和资源锁调度用例、自动完成一次清洁重放，并保存 lane 与 Router 制品。Router 只输出 `DONE`、`REPLAY_ONCE`、`START_MCP` 或 `INVALID_RESULT`；终态单独使用 `PASS`、`FAIL`、`BLOCKED`、`NOT_RUN` 或 `FLAKY`。失败特征与重放执行上下文均以可读字段逐项保存和比较。
 
+服务通过 run 专属的 `runtime.spawn()` 启动：Windows `.cmd/.bat` 自动适配，PID 与命令写入进程账本，并在正常或异常退出时清理进程树。Checkpoint 支持同一冻结计划与执行器的 `--resume`，避免从头重跑已完成用例。MCP 证据通过 staging 导入器复制进 run root 并记录 SHA-256 清单。
+
 ## 测试时间记录
 
-每次审查记录整体、通道、用例和尝试的 `started_at`、`finished_at` 与 `duration_ms`。Playwright Test 使用内置 reporter 自动记录每个 `test()`；API 和状态用例遵循相同结果结构。清洁重放保留两次独立计时，不用后一次覆盖首次失败。
+每次审查在 `audit-session.json` 记录完整墙钟时间、每次调用、恢复间隔、启动、首次执行、清洁重放、MCP、制品与清理阶段；通道、用例和尝试继续分别记录计时。Playwright Test reporter 同时区分断言、定位器和真正的超时，避免错误触发重放或 MCP。
 
 ## 最终输出验证
 

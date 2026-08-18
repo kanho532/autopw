@@ -8,6 +8,8 @@ import { orchestrateRun } from '../autopw-run.mjs'
 import { routeCase } from '../autopw-router.mjs'
 import { validateRun } from '../autopw-validate.mjs'
 
+const BUTTON_LOCATOR = [{ strategy: 'ROLE', value: 'button', name: '按钮', exact: true, unique: true }]
+
 function writeJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
@@ -36,7 +38,7 @@ function context(overrides = {}) {
     storage_state_contract: 'anonymous',
     steps: ['访问页面'],
     assertions: ['按钮可见'],
-    locator_contract: ["getByRole('button')"],
+    locator_contract: BUTTON_LOCATOR,
     ...overrides
   }
 }
@@ -71,6 +73,7 @@ function browserPlan(root) {
         preconditions: [],
         steps: ['访问页面'],
         assertions: ['按钮可见'],
+        locator_contract: BUTTON_LOCATOR,
         evidence_contract: ['trace'],
         dependencies: [],
         resource_locks: ['browser_context'],
@@ -194,8 +197,22 @@ function apiCase(id) {
   }
 }
 
-function report(ids, counts) {
-  return `# Report\n\n${ids.join('\n\n')}\n\n| 用例状态 | 数量 |\n|---|---:|\n| 通过 | ${counts.PASS} |\n| 失败/发现问题 | ${counts.FAIL} |\n| 阻塞 | ${counts.BLOCKED} |\n| 未执行/超出范围 | ${counts.NOT_RUN} |\n| 不稳定 | ${counts.FLAKY} |\n\n[plan](execution-plan.json)\n`
+function session(runId, started = '2026-08-18T00:00:00.000Z', duration = 1000) {
+  const finished = new Date(Date.parse(started) + duration).toISOString()
+  return {
+    version: 1,
+    run_id: runId,
+    started_at: started,
+    finished_at: finished,
+    duration_ms: duration,
+    invocations: [{ started_at: started, finished_at: finished, duration_ms: duration, status: 'PASS', resumed: false }],
+    phases: [],
+    totals: {}
+  }
+}
+
+function report(ids, counts, duration = 1000) {
+  return `# Report\n\n${ids.join('\n\n')}\n\n审查会话总耗时: ${duration} ms\n\n| 用例状态 | 数量 |\n|---|---:|\n| 通过 | ${counts.PASS} |\n| 失败/发现问题 | ${counts.FAIL} |\n| 阻塞 | ${counts.BLOCKED} |\n| 未执行/超出范围 | ${counts.NOT_RUN} |\n| 不稳定 | ${counts.FLAKY} |\n\n[plan](execution-plan.json)\n`
 }
 
 test('ten planned cases with one explicit NOT_RUN form a valid audit', () => {
@@ -225,6 +242,7 @@ test('ten planned cases with one explicit NOT_RUN form a valid audit', () => {
     return { case_id: id, attempt: 1, status: 'PASS', timing: timing(1), evidence: { artifact } }
   })
   writeJson(path.join(root, 'execution-plan.json'), plan)
+  writeJson(path.join(runRoot, 'audit-session.json'), session(plan.run_id))
   writeJson(path.join(runRoot, 'api', 'lane-result.json'), {
     run_id: 'run-ten',
     lane: 'API',
@@ -255,6 +273,7 @@ test('artifact outside run root is rejected', () => {
     cases: [apiCase(id)]
   }
   writeJson(path.join(root, 'execution-plan.json'), plan)
+  writeJson(path.join(runRoot, 'audit-session.json'), session(plan.run_id))
   writeJson(path.join(runRoot, 'api', 'lane-result.json'), {
     run_id: 'run-outside', lane: 'API', ...timing(1),
     cases: [{ case_id: id, attempt: 1, status: 'PASS', timing: timing(1), evidence: { artifact: outside } }]
@@ -269,6 +288,7 @@ test('MCP evidence without router authorization rejects the run', () => {
   const runRoot = path.join(root, 'runs', 'run-integration')
   const plan = browserPlan(root)
   writeJson(path.join(root, 'execution-plan.json'), plan)
+  writeJson(path.join(runRoot, 'audit-session.json'), session(plan.run_id))
   writeJson(path.join(runRoot, 'playwright', 'pass.json'), { ok: true })
   writeJson(path.join(runRoot, 'mcp', 'diagnostic.json'), { should_not_run: true })
   writeJson(path.join(runRoot, 'playwright', 'lane-result.json'), {

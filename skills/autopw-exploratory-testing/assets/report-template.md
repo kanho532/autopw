@@ -2,7 +2,7 @@
 
 **目标：** {前端 URL} → {后端/API URL}\
 **日期：** {YYYY-MM-DD}\
-**审查模式：** {FULL / COMMIT_TO_WORKTREE}\
+**审查模式：** {FULL / COMMIT_TO_WORKTREE / COMMIT_TO_COMMIT}\
 **Git 范围：** {FULL 时写“不适用”；增量模式写请求的 baseline、解析后的完整 SHA、当前 HEAD 与 change-scope.md 链接}\
 **范围：** {本次审查的页面、功能、接口、代码范围}\
 **执行方式：** 静态源码审查 + {API/浏览器/服务端日志/数据库状态等实际使用的证据通道}\
@@ -12,7 +12,7 @@
 **回退通道：** {未发生则写“无”；发生时写原执行器、失败原因和实际回退工具}\
 **审查开始：** {ISO 8601 时间}\
 **审查结束：** {ISO 8601 时间}\
-**总耗时：** {duration_ms 及可读时长}
+**审查会话总耗时：** {audit-session.json 的 duration_ms} ms（{可读时长}）
 
 ---
 
@@ -121,6 +121,16 @@
 
 ## 执行时间
 
+| 会话阶段 | 耗时（ms） | 说明 |
+|---|---:|---|
+| 启动与服务准备 | {setup_ms} | {端口检查、依赖与服务启动} |
+| 首次执行 | {initial_execution_ms} | {API、浏览器、静态与状态通道} |
+| 清洁重放 | {clean_replay_ms} | {未触发写 0} |
+| MCP 诊断 | {mcp_diagnostic_ms} | {未触发写 0} |
+| 制品与报告准备 | {artifact_write_ms} | {制品落盘} |
+| 服务与数据清理 | {cleanup_ms} | {进程树和数据清理} |
+| 失败后等待/人工修正 | {external_wait_or_intervention_ms} | {无则写 0} |
+
 | 通道 | 开始时间 | 结束时间 | 耗时（ms） |
 |---|---|---|---:|
 | {API / PLAYWRIGHT_TEST / MCP_DIAGNOSTIC / STATIC / LOG_STATE} | {started_at} | {finished_at} | {duration_ms} |
@@ -150,3 +160,4 @@
 4. 报告必须区分 Playwright MCP、Playwright Test 和其他宿主浏览器；只记录实际执行过的工具。
 5. `COMMIT_TO_WORKTREE` 报告只能覆盖冻结变更清单及其直接回归路径，不得暗示已完成全仓库或全站审查。
 6. 每个已执行用例和尝试都必须有开始、结束和耗时记录；报告汇总必须与通道原始计时制品一致。
+7. “审查会话总耗时”必须来自 `audit-session.json`，不得只报告最后一次干净运行的耗时。

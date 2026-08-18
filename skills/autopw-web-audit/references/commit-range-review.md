@@ -32,6 +32,8 @@ git status --short --untracked-files=all
 - 允许作为上下文读取的直接受影响功能和依赖；
 - 一句话业务意图、判断依据和置信度 `CONFIRMED`、`INFERRED` 或 `UNKNOWN`。
 
+对于 `COMMIT_TO_COMMIT`，同时解析 baseline 与 head 的完整 40 位 SHA，使用 `git diff --find-renames --find-copies <baseline> <head> --`，并在 `change-scope.md` 记录模式、两个 SHA、提交列表和文件清单。`target.worktree_status` 必须为空；工作区只可作为只读上下文，不得混入范围、发现或测试归因。
+
 ### 最简业务意图识别
 
 此步骤仅用于 `COMMIT_TO_WORKTREE`：
@@ -65,4 +67,4 @@ git diff <commit> HEAD
 git diff <base> <head>
 ```
 
-除非选择的范围模式为 `COMMIT_TO_WORKTREE`，否则不要把仅提交范围的结果与工作区变更混合。
+两个已提交 ref 之间的请求必须使用 `COMMIT_TO_COMMIT`；只有 baseline 到当前工作区的请求使用 `COMMIT_TO_WORKTREE`。不要在两种模式间做近似映射，也不要把仅提交范围的结果与工作区变更混合。

@@ -12,7 +12,9 @@
 4. `PATH`、环境变量以及已运行且命令行与当前项目匹配的进程；
 5. 限定范围内的工具目录：仓库父目录、用户常见工具/缓存目录和任务上下文已经指出的位置。
 
-不要从磁盘根目录进行无界搜索。Windows 上优先调用 `.cmd`/`.exe` 的绝对路径；发现 PATH 只差一个移动后的目录时，使用实际路径并在报告中记录。
+不要从磁盘根目录进行无界搜索。Windows 上优先调用 `.cmd`/`.exe` 的绝对路径；发现 PATH 只差一个移动后的目录时，使用实际路径并在报告中记录。执行器不得直接 `spawn()` `.cmd/.bat`，必须使用 Orchestrator 提供的 `runtime.spawn()`。
+
+在 `lifecycle.setup` 中启动本次服务，并合并 `runtime.isolation.env`。只允许复用计划明确标为 `EXTERNAL` 且健康检查匹配的服务；`AUTOPW` 服务端口已占用时直接阻塞，不得猜测旧进程可复用。测试数据使用 run 前缀或独占临时数据库。`lifecycle.cleanup` 做业务数据清理，Orchestrator 最终按登记 PID 清理进程树。
 
 ## 2. Playwright Test 发现与 MCP 门禁
 
@@ -44,7 +46,7 @@ Playwright Test 完成后，把冻结浏览器用例 ID 写入 `expected_case_id
 
 只有实际调用 Playwright Test 执行测试文件时，才能写“Playwright Test 已运行”。使用 Playwright MCP 可以写“Playwright MCP 浏览器验证已运行”，两者不得合并表述。
 
-同一审查只在首次 `START_MCP` 后执行一次 MCP 预检。相关诊断复用一个隔离页面、登录状态和浏览器上下文，并只在关键检查点采集快照、网络和控制台证据。MCP 不得重跑完整回归。工作器结束后由主协调器校验结果并回填计划；运行时发现以 `DISCOVERED-<n>` 追加，不修改冻结用例的范围或断言。
+同一审查只在首次 `START_MCP` 后执行一次 MCP 预检。相关诊断复用一个隔离页面、登录状态和浏览器上下文，并只在关键检查点采集快照、网络和控制台证据。MCP 不得重跑完整回归。MCP 先写宿主允许的 staging 目录，再由 `evidence_importer.import()` 导入当前 run root；不得手工复制或让 lane 引用 run root 外路径。工作器结束后由主协调器校验结果并回填计划；运行时发现以 `DISCOVERED-<n>` 追加，不修改冻结用例的范围或断言。
 
 安装临时依赖或下载新浏览器会产生网络/磁盘变更时，遵守当前环境的权限规则。优先复用已有浏览器，完成后清理一次性运行目录。
 
@@ -65,7 +67,7 @@ Playwright Test 完成后，把冻结浏览器用例 ID 写入 `expected_case_id
 
 “运行时已验证”并不等于“浏览器已验证”。API、日志或持久化状态同样可以完成运行时验证。报告中写明实际证据通道。
 
-每个通道、用例和尝试记录 ISO 8601 的 `started_at`、`finished_at` 与 `duration_ms`。Playwright Test 使用 AutoPW reporter 自动记录每个 `test()`；API 和其他通道使用相同字段。保留第一次失败和清洁重放各自的时间，不能用第二次结果覆盖第一次。
+每个通道、用例和尝试记录 ISO 8601 的 `started_at`、`finished_at` 与 `duration_ms`。Playwright Test 使用 AutoPW reporter 自动记录每个 `test()` 和结构化 `failure_type`；API 和其他通道使用相同字段。保留第一次失败和清洁重放各自的时间，不能用第二次结果覆盖第一次。报告另外读取 `audit-session.json`，汇总所有失败调用、恢复等待、MCP 与清理耗时。
 
 ## 4. 上游故障后的继续策略
 

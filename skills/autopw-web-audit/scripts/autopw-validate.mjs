@@ -2,6 +2,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 
 import { validateSchema } from './lib/schema-validator.mjs'
@@ -24,6 +25,10 @@ function isObject(value) {
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'))
+}
+
+function sha256(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex')
 }
 
 function within(root, candidate) {
@@ -216,6 +221,32 @@ export function validateRun({ planPath, runRoot, reportPath }) {
     return finish(plan?.run_id ?? null, [], {}, errors, warnings, counters)
   }
 
+  const sessionPath = path.join(absoluteRunRoot, 'audit-session.json')
+  let auditSession = null
+  if (!fs.existsSync(sessionPath)) {
+    addError(errors, 'TIMING.MISSING_SESSION', 'audit-session.json is required for wall-clock accounting', {
+      path: sessionPath
+    })
+  } else {
+    try {
+      auditSession = readJson(sessionPath)
+      const sessionSchema = validateSchema('audit-session', auditSession)
+      if (!sessionSchema.valid) {
+        addError(errors, 'TIMING.INVALID_SESSION', 'audit-session.json does not match its schema', {
+          path: sessionPath,
+          schema_errors: sessionSchema.errors
+        })
+      } else {
+        if (auditSession.run_id !== plan.run_id) addError(errors, 'TIMING.SESSION_RUN_MISMATCH', 'Audit session run_id differs from the plan')
+        for (const field of timingErrors(auditSession, 'audit-session')) {
+          addError(errors, 'TIMING.INVALID_SESSION', `Invalid audit session timing: ${field}`)
+        }
+      }
+    } catch (error) {
+      addError(errors, 'TIMING.INVALID_SESSION_JSON', error.message, { path: sessionPath })
+    }
+  }
+
   const planById = new Map()
   for (const testCase of plan.cases) {
     if (planById.has(testCase.id)) {
@@ -350,6 +381,41 @@ export function validateRun({ planPath, runRoot, reportPath }) {
     }
   }
 
+  if (mcpByCase.size > 0) {
+    const importedArtifacts = [...mcpByCase.values()]
+      .flat()
+      .flatMap((entry) => evidencePaths(entry.result.evidence ?? {}))
+      .filter((item) => !item.sourceReference)
+      .map((item) => item.value)
+    if (importedArtifacts.length > 0) {
+      const manifestPath = path.join(absoluteRunRoot, 'mcp', 'evidence-manifest.json')
+      if (!fs.existsSync(manifestPath)) {
+        addError(errors, 'MCP.MISSING_EVIDENCE_MANIFEST', 'MCP evidence must be imported through the run-root manifest')
+      } else {
+        try {
+          const manifest = readJson(manifestPath)
+          const byPath = new Map((manifest.artifacts ?? []).map((item) => [item.path, item]))
+          for (const artifact of importedArtifacts) {
+            const normalized = path.isAbsolute(artifact)
+              ? path.relative(absoluteRunRoot, artifact).split(path.sep).join('/')
+              : artifact.split(path.sep).join('/')
+            const entry = byPath.get(normalized)
+            if (!entry) {
+              addError(errors, 'MCP.UNIMPORTED_EVIDENCE', `MCP artifact is absent from evidence-manifest.json: ${artifact}`)
+              continue
+            }
+            const candidate = path.resolve(absoluteRunRoot, normalized)
+            if (fs.existsSync(candidate) && sha256(candidate) !== entry.sha256) {
+              addError(errors, 'MCP.EVIDENCE_CHECKSUM_MISMATCH', `MCP artifact checksum differs from its manifest: ${artifact}`)
+            }
+          }
+        } catch (error) {
+          addError(errors, 'MCP.INVALID_EVIDENCE_MANIFEST', error.message, { path: manifestPath })
+        }
+      }
+    }
+  }
+
   const finalStatuses = {}
   for (const [caseId, planCase] of planById) {
     const primary = primaryByCase.get(caseId) ?? []
@@ -407,6 +473,17 @@ export function validateRun({ planPath, runRoot, reportPath }) {
   }
 
   const markdown = fs.readFileSync(absoluteReport, 'utf8')
+  if (auditSession) {
+    const match = markdown.match(/审查会话总耗时[^\r\n]*?(\d+)\s*ms/i)
+    if (!match) {
+      addError(errors, 'REPORT.MISSING_SESSION_DURATION', 'Report must include “审查会话总耗时: <ms> ms”')
+    } else if (Math.abs(Number(match[1]) - auditSession.duration_ms) > 1000) {
+      addError(errors, 'REPORT.SESSION_DURATION_MISMATCH', 'Report wall-clock duration differs from audit-session.json', {
+        expected: auditSession.duration_ms,
+        actual: Number(match[1])
+      })
+    }
+  }
   for (const target of markdownTargets(markdown)) {
     const candidate = resolveLocalPath(target, path.dirname(absoluteReport))
     counters.report_links_checked += 1

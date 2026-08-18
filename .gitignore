@@ -1,1 +1,6 @@
 node_modules/
+dist/
+autopw-output/
+.playwright-mcp/
+mcp-*.log
+mcp-*.png

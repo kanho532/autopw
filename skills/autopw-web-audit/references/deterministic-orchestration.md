@@ -23,6 +23,7 @@
 - 不使用哈希表示失败。直接保存并逐字段比较可读的 `failure_signature`。
 - 每个用例和每次尝试记录 ISO 8601 的开始、结束时间以及 `duration_ms`。
 - 每个工作器只写自己的运行目录并返回结构化结果，不直接定级、编号或扩展范围。
+- 所有服务进程必须由 run 专属进程登记器启动；异常、验证失败和正常完成都执行同一 `finally` 清理。
 - 最终报告必须通过 `autopw-validate.mjs` 的整体验收后才能交付。
 
 Case 终态只能是 `PASS`、`FAIL`、`BLOCKED`、`NOT_RUN` 或 `FLAKY`。Router 动作只能是 `DONE`、`REPLAY_ONCE`、`START_MCP` 或 `INVALID_RESULT`；Router 使用独立 `final_status` 收口，禁止再把状态编码进动作名称。
@@ -40,6 +41,7 @@ Case 终态只能是 `PASS`、`FAIL`、`BLOCKED`、`NOT_RUN` 或 `FLAKY`。Route
 - 依赖和资源锁；
 - 是否修改状态以及清理责任；
 - `mcp_trigger`。
+- 浏览器用例的结构化 `locator_contract`。
 
 浏览器用例一律先冻结为 `PLAYWRIGHT_TEST`。不得因页面复杂、定位器未知或 MCP 可用而预先改为 MCP。
 
@@ -56,7 +58,9 @@ node <skill-dir>/scripts/autopw-run.mjs \
   --executor-module <audit-root>/executors.mjs
 ```
 
-执行器模块导出 `executors`、默认对象或 `createExecutors()`，并以统一接口实现各通道：`executeCase(testCase, context)`。支持的键为 `DIRECT_API`、`PLAYWRIGHT_TEST`、`STATIC`、`LOG_STATE` 和可选的 `MCP_DIAGNOSTIC`。Orchestrator 按依赖和资源锁调度，跨通道安全任务并行，同一变更资源锁上的任务串行。
+执行器模块导出 `executors`、默认对象、`createExecutors()`，或 `{ executors, lifecycle }`。`lifecycle.setup({ runtime })` 负责启动服务，`lifecycle.cleanup()` 负责应用级清理；无论执行器是否抛错，Orchestrator 都会在 `finally` 中调用 cleanup 并回收 `runtime.spawn()` 登记的进程树。Windows 的 `.cmd/.bat` 由该入口经 `cmd.exe /d /s /c` 启动，其他可执行文件保持 `shell: false`。
+
+每个 `AUTOPW` 管理的服务在计划中冻结端口和数据隔离方式。启动前拒绝占用中的未知端口；服务接收 `runtime.isolation.env`，测试数据使用 `runtime.isolation.data_prefix`。不要按进程名批量结束 Java 或 Node，也不要复用未证明属于本 run 的旧服务。
 
 宿主支持子 agent 时，在计划冻结后并行派发两个有界任务：
 
@@ -94,6 +98,8 @@ port:8080
 
 配置 `scripts/autopw-playwright-reporter.cjs` 记录每个测试的开始、结束和耗时。导航前注册 `console`、`pageerror`、`requestfailed` 和相关响应监听器。
 
+定位器优先级为唯一 `data-testid`、带精确 accessible name 的 role/label/placeholder、精确文本、受父元素约束的关系定位，最后才是稳定 CSS。生成 spec 时使用 `scripts/playwright/locator-contract.cjs` 的 `resolveUniqueLocator()`，在操作前强制 `count() === 1`。禁止使用会同时命中肯定和否定文案的模糊 `hasText`。
+
 ## 5. 计时
 
 所有时间使用 ISO 8601。允许使用 UTC `Z` 或带偏移的时间，但同一运行保持一致。每项结果必须包含：
@@ -110,7 +116,7 @@ port:8080
 
 浏览器尝试还必须直接写出可读的 `execution_context`：runner 与版本、浏览器与 build、viewport、locale、timezone、spec 路径、测试标题、storage-state 契约、步骤、断言和 locator 契约；另写本次 `isolation_id`。不使用哈希或摘要代替这些字段。
 
-开始、结束与持续时间的误差不得超过 1000 毫秒。Playwright reporter 将每个 `test()` 的计时写入 `autopw-playwright-timings.json`。API 工作器为每个请求用例记录同样字段。主协调器在报告中汇总每个通道和每个用例的耗时，不用发现数量代替用例数量。
+开始、结束与持续时间的误差不得超过 1000 毫秒。Playwright reporter 将每个 `test()` 的计时写入 `autopw-playwright-timings.json`。API 工作器为每个请求用例记录同样字段。Orchestrator 另写 `audit-session.json`，汇总每次进程调用、恢复间隔以及 setup、首次执行、清洁重放、Router、MCP、制品写入和 cleanup 阶段。报告中的“审查会话总耗时”必须与该文件一致，不能把最后一次干净执行时间写成总耗时。
 
 ## 6. 失败证据
 
@@ -125,6 +131,8 @@ port:8080
 | `NAVIGATION` | 起始/最终 URL、状态或重定向链、trace |
 | `TIMEOUT` | 等待条件、最终 URL、DOM 状态、待定/失败请求、trace |
 | `INFRASTRUCTURE` | 健康检查、命令、退出码或端口状态 |
+
+分类顺序必须以语义为准：Playwright `expect(...)` 在等待期结束后观察到错误值属于 `ASSERTION`；strict-mode 多匹配属于 `LOCATOR`；只有整项测试、显式等待条件或非断言操作超时才属于 `TIMEOUT`。使用 reporter 输出的 `failure_type`，不要对包含 “Timeout” 的字符串做单一关键词分类。
 
 失败签名直接包含以下字段：
 
@@ -176,12 +184,17 @@ node <skill-dir>/scripts/autopw-router.mjs --input <router-input.json> --output 
 
 MCP 工作器只回答一个明确诊断问题，默认最多一个会话、12 次有意义操作、5 分钟，并复用一个隔离浏览器上下文。它不得执行完整回归、修改源码、改变断言或直接写报告。
 
+当宿主只能写工作区或 staging 目录时，通过 `--mcp-staging-root` 授权来源，再调用 `evidence_importer.import(source, destination)`。导入器复制文件、计算 SHA-256 并写 `mcp/evidence-manifest.json`；Validator 拒绝未导入、越界或校验和变化的 MCP 证据。
+
 ## 9. 制品与合并
 
 建议目录：
 
 ```text
 autopw-output/runs/<run-id>/
+├── audit-session.json
+├── checkpoint.json
+├── runtime/processes.json
 ├── api/
 ├── playwright/
 │   ├── generated/
@@ -208,6 +221,8 @@ node <skill-dir>/scripts/autopw-validate.mjs \
 
 验证器检查计划 ID、用例覆盖、尝试顺序、通道归属、冻结时间、路由终态、MCP 诊断闭环、证据路径、报告本地链接、用例引用和最终状态计数。`valid: false` 是制品或流程错误，不得通过删除失败用例、改变冻结断言或手工伪造计数绕过。
 最终交付使用 `--output` 保存 `validation.json`；只读或中间预检可以省略该参数并从 stdout 读取同一结果。
+
+进程中断后以同一 plan、executor module 和 run root 执行 `autopw-run.mjs --resume`。Checkpoint fingerprint 包含冻结计划和执行器内容；匹配时只执行未完成用例及其后续阶段，不匹配时拒绝恢复。恢复等待时间计入 session 的 `external_wait_or_intervention_ms`。
 
 ## 10. 降级
 
