@@ -195,7 +195,7 @@ MCP 工作器只回答一个明确诊断问题，默认最多一个会话、12 �
 建议目录：
 
 ```text
-autopw-output/runs/<run-id>/
+<audit-root>/runs/<run-id>/
 ├── audit-session.json
 ├── checkpoint.json
 ├── runtime/processes.json

@@ -7,6 +7,16 @@ description: 审查受信任的本地 Web 应用源码、Git 变更、两个 com
 
 先理解业务与风险，再把冻结计划交给确定性执行系统。区分静态假设、执行事实、调度决定和报告解释。
 
+## 产物位置（必须先遵守）
+
+所有审查产物必须写入“被测试项目”的根目录，不得写入插件源码目录、当前 Agent 工作目录或项目外临时目录。启动审查时先创建唯一的审查目录：
+
+```text
+<测试项目根目录>/autopw-output/<运行模式>-<UTC时间>/
+```
+
+其中 `<运行模式>` 只能是 `FULL`、`COMMIT_TO_WORKTREE` 或 `COMMIT_TO_COMMIT`；`<UTC时间>` 使用 `YYYYMMDDTHHmmssZ`，例如 `COMMIT_TO_COMMIT-20260818T093000Z`。该目录记为 `<audit-root>`，计划、`change-scope.md`、`runs/`、报告、`validation.json` 和所有证据都必须位于其中；同一项目的不同审查不得复用旧目录。
+
 ## 输出与边界
 
 - 默认使用简体中文编写计划和报告；保留代码、命令、路径、协议字段和原始错误文本。
@@ -25,7 +35,7 @@ description: 审查受信任的本地 Web 应用源码、Git 变更、两个 com
 - `COMMIT_TO_WORKTREE`：仅审查用户指定 baseline 到当前工作区的差异及直接回归路径。
 - `COMMIT_TO_COMMIT`：仅审查解析后的 baseline SHA 到 head SHA 之间的已提交差异及直接回归路径，不混入工作区变更。
 
-使用任一增量模式时，读取 [commit-range-review.md](references/commit-range-review.md)，解析所需的完整 SHA，并在计划前冻结 `autopw-output/change-scope.md`。不要静默替换 baseline，也不要把无关旧缺陷归入本次发现。
+使用任一增量模式时，读取 [commit-range-review.md](references/commit-range-review.md)，解析所需的完整 SHA，并在计划前冻结 `<audit-root>/change-scope.md`。不要静默替换 baseline，也不要把无关旧缺陷归入本次发现。
 
 ## 固定职责边界
 
@@ -49,10 +59,10 @@ description: 审查受信任的本地 Web 应用源码、Git 变更、两个 com
 
 根据风险设计正常流程、错误处理、边界值、鉴权、UI/API/持久化一致性、Console/网络和相邻回归用例。为每个用例记录 ID、来源、前置条件、步骤、断言、通道、执行器、证据契约、依赖、资源锁、变更性、清理和 MCP 触发条件。浏览器用例还必须冻结结构化 `locator_contract`；文本、角色、标签和 placeholder 定位必须 `exact: true`，每个定位器必须 `unique: true`。
 
-同时写入：
+同时写入 `<audit-root>`：
 
-- `autopw-output/test-plan.md`
-- 遵循 [execution-plan.schema.json](references/execution-plan.schema.json) 的 `autopw-output/execution-plan.json`
+- `test-plan.md`
+- 遵循 [execution-plan.schema.json](references/execution-plan.schema.json) 的 `execution-plan.json`
 
 运行时开始后不要修改冻结用例的范围或断言。仅由主协调者追加 `DISCOVERED-<n>`。
 
@@ -84,7 +94,7 @@ Orchestrator 按依赖和资源锁调度安全并行任务，自动执行一次�
 
 ### 5. 解释并验收
 
-按报告模板生成 `autopw-output/report.md`。每个问题包含位置、复现步骤、预期/实际、证据通道与制品、严重级别和类别。分别列出：
+按报告模板生成 `<audit-root>/report.md`。每个问题包含位置、复现步骤、预期/实际、证据通道与制品、严重级别和类别。分别列出：
 
 - 已验证问题；
 - 静态发现（未完成运行时验证）；

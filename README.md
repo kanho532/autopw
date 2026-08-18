@@ -128,7 +128,7 @@ Claude Code 原生读取 `.claude-plugin/plugin.json`、`skills/` 和 `.mcp.json
 
 ## 多 Agent 与确定性路由
 
-宿主支持子 agent 时，主协调器在计划冻结后并行派发独立的 API 和 Playwright Test 工作器，并继续静态审查。工作器只写各自的 `autopw-output/runs/<run-id>/<lane>/`；范围、计划、问题编号、定级和最终报告始终由主协调器单写。宿主不支持子 agent 时，使用相同结构化协议退化为隔离进程或串行执行。
+宿主支持子 agent 时，主协调器在计划冻结后并行派发独立的 API 和 Playwright Test 工作器，并继续静态审查。工作器只写各自的 `<audit-root>/runs/<run-id>/<lane>/`；范围、计划、问题编号、定级和最终报告始终由主协调器单写。宿主不支持子 agent 时，使用相同结构化协议退化为隔离进程或串行执行。
 
 `skills/autopw-web-audit/scripts/autopw-run.mjs` 读取冻结计划并调用统一的 `executeCase(testCase, context)` 执行器接口，按依赖和资源锁调度用例、自动完成一次清洁重放，并保存 lane 与 Router 制品。Router 只输出 `DONE`、`REPLAY_ONCE`、`START_MCP` 或 `INVALID_RESULT`；终态单独使用 `PASS`、`FAIL`、`BLOCKED`、`NOT_RUN` 或 `FLAKY`。失败特征与重放执行上下文均以可读字段逐项保存和比较。
 
@@ -141,26 +141,5 @@ Claude Code 原生读取 `.claude-plugin/plugin.json`、`skills/` 和 `.mcp.json
 ## 最终输出验证
 
 `skills/autopw-web-audit/scripts/autopw-validate.mjs` 是审查交付前的确定性验收门。JSON Schema 由 AJV 在运行时执行，Validator 只补充跨制品语义检查：冻结计划、lane 归属、浏览器路由、MCP 授权闭环、证据文件、计时、报告引用和五种终态计数。`report.md` 或 `validation.json` 缺失均表示审查未完成；只有 Validator 退出码为 0 且结果为 `valid: true` 时才允许交付报告。
-
-## Commit 到工作区增量审查
-
-示例请求：
-
-```text
-只审查 commit 1a2b3c4 到当前工作区的改动，生成测试方案并执行相关验证。
-```
-
-AutoPW 会解析基线 SHA，使用 `git diff <baseline> --` 获取 tracked workspace 差异，再结合 `git status --short --untracked-files=all` 纳入未跟踪文件，并将冻结范围写入 `autopw-output/change-scope.md`。未变化且与变更无直接依赖的功能不进入问题清单或测试矩阵。
-
-## 开发校验
-
-安装依赖并运行确定性路由器、Orchestrator、最终输出验证器和 Playwright Test reporter 测试：
-
-```bash
-npm ci
-npm test
-```
-
-发布前还应运行 Skill 与插件验证器，并在不包含目标项目依赖修改的真实 Web 应用上执行一次前向测试。
 
 > 若想查看失败网页证据或截图，请直接询问 Agent，并说明要查看的用例 ID 或失败步骤。

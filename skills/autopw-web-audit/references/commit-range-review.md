@@ -20,7 +20,7 @@ git status --short --untracked-files=all
 
 ## 冻结范围
 
-编写测试计划前，创建 `autopw-output/change-scope.md`，其中包含：
+编写测试计划前，在当前审查的 `<audit-root>` 创建 `change-scope.md`，其中包含：
 
 - 范围模式 `COMMIT_TO_WORKTREE`；
 - 请求的基线和解析后的完整 SHA；
