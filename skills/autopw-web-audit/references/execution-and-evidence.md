@@ -12,7 +12,7 @@
 4. `PATH`、环境变量以及已运行且命令行与当前项目匹配的进程；
 5. 限定范围内的工具目录：仓库父目录、用户常见工具/缓存目录和任务上下文已经指出的位置。
 
-不要从磁盘根目录进行无界搜索。Windows 上优先调用 `.cmd`/`.exe` 的绝对路径；发现 PATH 只差一个移动后的目录时，使用实际路径并在报告中记录。执行器不得直接 `spawn()` `.cmd/.bat`，必须使用 Orchestrator 提供的 `runtime.spawn()`。
+不要从磁盘根目录进行无界搜索。发现 PATH 只差一个移动后的目录时，使用实际路径并在报告中记录。Codex 负责为当前平台选择可直接执行的程序和参数，再交给 Orchestrator 的 `runtime.spawn()` 登记；该入口不解释、不包装 `.cmd/.bat`，也不修复引用或 shell 语义。不要把尚未验证可启动的包装器直接交给执行器。
 
 在 `lifecycle.setup` 中启动本次服务，并合并 `runtime.isolation.env`。只允许复用计划明确标为 `EXTERNAL` 且健康检查匹配的服务；`AUTOPW` 服务端口已占用时直接阻塞，不得猜测旧进程可复用。测试数据使用 run 前缀或独占临时数据库。`lifecycle.cleanup` 做业务数据清理，Orchestrator 最终按登记 PID 清理进程树。
 
@@ -27,7 +27,7 @@
 5. 工作区外、本次运行专属且版本固定的临时 Playwright Test 工具目录，优先复用已下载浏览器。不得修改目标项目的 `package.json`、lockfile 或虚拟环境；
 6. 如果策略、网络或系统条件禁止以上路径，写入结构化 `BLOCKED` 结果，同时继续 API、日志、状态和静态用例。
 
-只有现有测试同时覆盖相同角色、前置数据、步骤和冻结断言，且可以精确选择运行时，才复用该测试。其余浏览器用例写入本次运行专属 `.spec.*`。配置 [../scripts/autopw-playwright-reporter.cjs](../scripts/autopw-playwright-reporter.cjs)，先执行 `playwright test --list` 核对用例 ID 映射，再通过一次 runner 调用批量执行。
+只有现有测试同时覆盖相同角色、前置数据、步骤和冻结断言，且可以精确选择运行时，才复用该测试。其余浏览器用例写入本次运行专属 `.spec.*`。使用 [runtime-resolver.mjs](../scripts/playwright/runtime-resolver.mjs) 让 CLI、config 和 spec 绑定到同一个 Playwright package root；不得任意选择 `_npx` 缓存。spec 筛选使用相对 `testDir` 的路径。配置 [../scripts/autopw-playwright-reporter.cjs](../scripts/autopw-playwright-reporter.cjs)，先通过同一 runtime 执行一次 `playwright test --list` 核对用例 ID 映射，再通过一次 runner 调用批量执行。
 
 Playwright Test 完成后，把冻结浏览器用例 ID 写入 `expected_case_ids`，再使用 [autopw-router.mjs](../scripts/autopw-router.mjs) 检查实际结果覆盖、计时和证据。缺失、重复、范围外或空结果直接无效，不能用 runner 的成功退出码代替用例结果。首次失败且证据不完整时只清洁重放一次；重放通过或失败签名变化时输出 `DONE` 与终态 `FLAKY`。此阶段不要启动或预检 MCP。
 

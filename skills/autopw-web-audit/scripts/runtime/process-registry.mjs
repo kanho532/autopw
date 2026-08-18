@@ -12,31 +12,6 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
 }
 
-function commandExtension(command) {
-  return path.extname(String(command)).toLowerCase()
-}
-
-export function portableSpawnSpec(command, args = [], platform = process.platform) {
-  if (platform === 'win32' && ['.cmd', '.bat'].includes(commandExtension(command))) {
-    return {
-      command: process.env.ComSpec || 'cmd.exe',
-      args: ['/d', '/s', '/c', command, ...args],
-      wrapped: true
-    }
-  }
-  return { command, args, wrapped: false }
-}
-
-export function spawnPortable(command, args = [], options = {}) {
-  const { platform = process.platform, ...spawnOptions } = options
-  const spec = portableSpawnSpec(command, args, platform)
-  return spawn(spec.command, spec.args, {
-    windowsHide: true,
-    shell: false,
-    ...spawnOptions
-  })
-}
-
 async function waitForExit(child, timeoutMs) {
   if (child.exitCode !== null || child.signalCode !== null) return true
   return new Promise((resolve) => {
@@ -83,7 +58,12 @@ export class ProcessRegistry {
 
   spawn(command, args = [], options = {}) {
     const detached = options.detached ?? this.platform !== 'win32'
-    const child = spawnPortable(command, args, { ...options, platform: this.platform, detached })
+    const child = spawn(command, args, {
+      windowsHide: true,
+      shell: false,
+      ...options,
+      detached
+    })
     const record = {
       pid: child.pid,
       command: String(command),

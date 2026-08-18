@@ -15,6 +15,7 @@ description: 审查受信任的本地 Web 应用源码、Git 变更、两个 com
 - 保留用户改动。仅停止本次启动且已核实归属的进程，恢复临时配置。
 - 默认只审查和测试；只有用户明确要求时才修复、提交或推送。
 - 起草报告前读取 `../autopw-exploratory-testing/assets/report-template.md`；定级前读取 `../autopw-exploratory-testing/references/issue-taxonomy.md`。
+- 从当前 Skill 文件位置解析 `<skill-dir>`，并让 reporter、resolver、Router 与 Validator 全部来自同一个 `<skill-dir>`。插件重装后若任务清单仍指向旧 cache 版本，停止执行并要求在新任务中重试，不得混用新旧版本制品。
 
 ## 选择范围
 
@@ -69,11 +70,11 @@ node <skill-dir>/scripts/autopw-run.mjs \
   --output <audit-root>/run-summary.json
 ```
 
-执行器模块可以返回 `{ executors, lifecycle }`。在 `lifecycle.setup` 中通过 `runtime.spawn()` 启动服务；不得直接调用 Node `spawn()`。该入口会在 Windows 上包装 `.cmd/.bat`，登记 run 专属 PID，并在异常路径的 `finally` 中清理进程树。服务和测试数据必须使用 `runtime.isolation.env` 与 `runtime.isolation.data_prefix`，不得复用未知端口进程或共享内存数据库。
+执行器模块可以返回 `{ executors, lifecycle }`。在 `lifecycle.setup` 中通过 `runtime.spawn()` 启动服务；不得直接调用 Node `spawn()`。该入口只登记 Codex 选定的命令和 PID，不解析、不包装也不修正平台命令；Codex 必须先选择在当前系统上可直接启动的可执行文件与参数。Orchestrator 会在异常路径的 `finally` 中清理登记的进程树。服务和测试数据必须使用 `runtime.isolation.env` 与 `runtime.isolation.data_prefix`，不得复用未知端口进程或共享内存数据库。
 
 进程异常后使用同一冻结计划、执行器和 run root 加 `--resume` 恢复。Orchestrator 只复用 fingerprint 匹配且已落盘的用例结果；不匹配时拒绝恢复。
 
-将 `DIRECT_API` 用于直接请求，将 `PLAYWRIGHT_TEST` 用于浏览器用例；按需使用 `STATIC` 与 `LOG_STATE`。在 Playwright 导航前捕获 console、pageerror、requestfailed 和相关响应。只为覆盖缺口生成本次运行专属 spec，不修改目标项目依赖。
+将 `DIRECT_API` 用于直接请求，将 `PLAYWRIGHT_TEST` 用于浏览器用例；按需使用 `STATIC` 与 `LOG_STATE`。在 Playwright 导航前捕获 console、pageerror、requestfailed 和相关响应。只为覆盖缺口生成本次运行专属 spec，不修改目标项目依赖。使用 `scripts/playwright/runtime-resolver.mjs` 选定一个版本固定的 Playwright package root；spec/config 从其 `test_module_path` 导入，runner 使用 `node <cli_path>`，禁止一边调用 `npx playwright` 一边从其他 `_npx` 缓存导入测试模块。传给 runner 的 spec 筛选必须相对 `testDir`，并在一次批量 `--list` 后通过同一 runner 执行全部冻结浏览器用例。
 
 Orchestrator 按依赖和资源锁调度安全并行任务，自动执行一次允许的清洁重放，并写入 lane 与 Router 结果。若宿主无法使用 Orchestrator，才按同一 Schema 和接口使用隔离进程降级，不得由 Agent 自行改变路由结果。
 
@@ -113,4 +114,5 @@ node <skill-dir>/scripts/autopw-validate.mjs \
 - 检查制品均位于本次 run root，且报告链接可解析。
 - 使用 reporter 给出的结构化失败类型；含 `expect(...)` 的轮询超时属于 `ASSERTION`，不能仅因错误文本出现 Timeout 而标为 `TIMEOUT`。
 - 运行全部仓库测试、Skill 校验与 `autopw-validate.mjs`。
+- 中断后没有 `report.md` 或 `validation.json`、以及 Validator 未返回 `valid: true`，都只能报告“审查未完成”；恢复或重跑并完成验收前不得交付应用结论。
 - 只停止本次启动的服务，保留用户工作区改动。

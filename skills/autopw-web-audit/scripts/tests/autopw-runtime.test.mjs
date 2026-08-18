@@ -6,7 +6,13 @@ import test from 'node:test'
 
 import { EvidenceImporter } from '../evidence/import.mjs'
 import { orchestrateRun } from '../orchestration/run.mjs'
-import { portableSpawnSpec, spawnPortable } from '../runtime/process-registry.mjs'
+import { ProcessRegistry } from '../runtime/process-registry.mjs'
+import {
+  inspectPlaywrightRuntime,
+  playwrightCliInvocation,
+  relativePlaywrightSpec,
+  resolvePlaywrightRuntime
+} from '../playwright/runtime-resolver.mjs'
 import { validateSchema } from '../lib/schema-validator.mjs'
 import { validateRun } from '../autopw-validate.mjs'
 
@@ -45,16 +51,10 @@ function timing() {
   return { started_at: started.toISOString(), finished_at: finished.toISOString(), duration_ms: 1 }
 }
 
-test('wraps Windows cmd and bat commands without enabling a shell for other executables', () => {
-  const npm = portableSpawnSpec('C:\\tools\\npm.cmd', ['--version'], 'win32')
-  assert.equal(npm.wrapped, true)
-  assert.match(npm.command.toLowerCase(), /cmd\.exe$/)
-  assert.deepEqual(npm.args.slice(0, 3), ['/d', '/s', '/c'])
-  assert.equal(portableSpawnSpec('node.exe', ['--version'], 'win32').wrapped, false)
-})
-
-test('executes npm.cmd through the portable Windows wrapper', { skip: process.platform !== 'win32' }, async () => {
-  const child = spawnPortable('npm.cmd', ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] })
+test('process registry executes the command selected by the executor without rewriting it', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autopw-process-'))
+  const registry = new ProcessRegistry({ runRoot: root })
+  const child = registry.spawn(process.execPath, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] })
   let stdout = ''
   child.stdout.on('data', (chunk) => { stdout += chunk })
   const code = await new Promise((resolve, reject) => {
@@ -62,7 +62,37 @@ test('executes npm.cmd through the portable Windows wrapper', { skip: process.pl
     child.once('exit', resolve)
   })
   assert.equal(code, 0)
-  assert.match(stdout.trim(), /^\d+\./)
+  assert.match(stdout.trim(), /^v\d+\./)
+  assert.equal(registry.records[0].command, process.execPath)
+})
+
+test('resolves one Playwright package for both CLI and test imports', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autopw-playwright-runtime-'))
+  const packageRoot = path.join(root, 'node_modules', 'playwright')
+  fs.mkdirSync(packageRoot, { recursive: true })
+  fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'playwright', version: '1.2.3' }))
+  fs.writeFileSync(path.join(packageRoot, 'cli.js'), '')
+  fs.writeFileSync(path.join(packageRoot, 'test.js'), '')
+
+  const runtime = resolvePlaywrightRuntime({ projectRoot: root })
+  assert.deepEqual(runtime, inspectPlaywrightRuntime(packageRoot))
+  assert.equal(runtime.version, '1.2.3')
+  assert.equal(runtime.cli_path, path.join(packageRoot, 'cli.js'))
+  assert.equal(runtime.test_module_path, path.join(packageRoot, 'test.js'))
+})
+
+test('builds Playwright CLI filters relative to testDir and rejects external specs', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autopw-playwright-spec-'))
+  const testDir = path.join(root, 'generated')
+  const specPath = path.join(testDir, 'browser-001.spec.cjs')
+  const runtime = { cli_path: path.join(root, 'playwright', 'cli.js'), test_module_path: path.join(root, 'playwright', 'test.js') }
+  const configPath = path.join(root, 'playwright.config.cjs')
+
+  assert.equal(relativePlaywrightSpec(testDir, specPath), 'browser-001.spec.cjs')
+  const invocation = playwrightCliInvocation({ runtime, testDir, configPath, specPaths: [specPath], list: true })
+  assert.equal(invocation.command, process.execPath)
+  assert.deepEqual(invocation.args, [runtime.cli_path, 'test', 'browser-001.spec.cjs', '--config', path.resolve(configPath), '--list'])
+  assert.throws(() => relativePlaywrightSpec(testDir, path.join(root, 'outside.spec.cjs')), /below testDir/)
 })
 
 test('imports MCP evidence into the run root with a checksum manifest', () => {

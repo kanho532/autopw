@@ -58,7 +58,7 @@ node <skill-dir>/scripts/autopw-run.mjs \
   --executor-module <audit-root>/executors.mjs
 ```
 
-执行器模块导出 `executors`、默认对象、`createExecutors()`，或 `{ executors, lifecycle }`。`lifecycle.setup({ runtime })` 负责启动服务，`lifecycle.cleanup()` 负责应用级清理；无论执行器是否抛错，Orchestrator 都会在 `finally` 中调用 cleanup 并回收 `runtime.spawn()` 登记的进程树。Windows 的 `.cmd/.bat` 由该入口经 `cmd.exe /d /s /c` 启动，其他可执行文件保持 `shell: false`。
+执行器模块导出 `executors`、默认对象、`createExecutors()`，或 `{ executors, lifecycle }`。`lifecycle.setup({ runtime })` 负责启动服务，`lifecycle.cleanup()` 负责应用级清理；无论执行器是否抛错，Orchestrator 都会在 `finally` 中调用 cleanup 并回收 `runtime.spawn()` 登记的进程树。`runtime.spawn()` 对命令保持透明并始终使用 `shell: false`：平台命令发现、可执行文件选择、包装器或 shell 参数均由 Codex 在执行器中明确决定，Orchestrator 不自动处理 `.cmd/.bat`。
 
 每个 `AUTOPW` 管理的服务在计划中冻结端口和数据隔离方式。启动前拒绝占用中的未知端口；服务接收 `runtime.isolation.env`，测试数据使用 `runtime.isolation.data_prefix`。不要按进程名批量结束 Java 或 Node，也不要复用未证明属于本 run 的旧服务。
 
@@ -93,6 +93,10 @@ port:8080
 5. 工作区外、本次运行专属且版本固定的临时工具目录。
 
 不得修改目标项目的依赖或 lockfile。只有现有测试同时覆盖相同角色、前置数据、步骤和冻结断言，且可以精确选择运行时，才标记为复用。其他覆盖缺口写入本次运行专属 spec。
+
+使用 [runtime-resolver.mjs](../scripts/playwright/runtime-resolver.mjs) 解析一个明确的 Playwright package root。生成的 config 和 spec 必须从返回的 `test_module_path` 导入 `defineConfig`、`test` 与 `expect`，并以 `process.execPath` 加返回的 `cli_path` 启动 runner。不得扫描多个 `_npx` 目录后任取第一个模块，也不得让 `npx playwright` 的 CLI 与另一个缓存中的 `playwright/test` 混用。临时工具目录必须版本固定，并作为明确的 `packageRoot` 或 `searchRoots` 输入 resolver。
+
+传给 Playwright CLI 的 spec 筛选是相对 `testDir` 的 POSIX 风格路径；使用 resolver 的 `playwrightCliInvocation()` 生成参数，不传 Windows 绝对路径或把绝对路径当作正则。所有冻结浏览器 spec 先全部生成，再通过一次 `--list` 和一次 runner 调用批量执行。若 Orchestrator 按用例调用 `PLAYWRIGHT_TEST` executor，执行器必须按 attempt 复用同一个批处理 Promise，并从批量结果中返回对应 case，禁止每个 case 并发覆盖共享 config、list、timing 或 JSON 结果文件。
 
 每个冻结浏览器用例必须映射到一个包含用例 ID 的 `test()`。执行前运行 `playwright test --list`，验证没有漏项、重复 ID 或范围外测试。相关流程通过一次 runner 调用批量执行。将冻结的浏览器 ID 原样写入路由输入的 `expected_case_ids`；路由器会再次校验实际结果不缺、不重、不多。runner 退出码为 0 但结果为空仍是无效执行，不能标记通过。
 
@@ -220,7 +224,7 @@ node <skill-dir>/scripts/autopw-validate.mjs \
 ```
 
 验证器检查计划 ID、用例覆盖、尝试顺序、通道归属、冻结时间、路由终态、MCP 诊断闭环、证据路径、报告本地链接、用例引用和最终状态计数。`valid: false` 是制品或流程错误，不得通过删除失败用例、改变冻结断言或手工伪造计数绕过。
-最终交付使用 `--output` 保存 `validation.json`；只读或中间预检可以省略该参数并从 stdout 读取同一结果。
+最终交付使用 `--output` 保存 `validation.json`；只读或中间预检可以省略该参数并从 stdout 读取同一结果。`report.md` 或 `validation.json` 缺失、Validator 未运行、退出码非零或 `valid` 非 `true` 都表示审查中断或未完成，不得对目标应用交付最终结论。
 
 进程中断后以同一 plan、executor module 和 run root 执行 `autopw-run.mjs --resume`。Checkpoint fingerprint 包含冻结计划和执行器内容；匹配时只执行未完成用例及其后续阶段，不匹配时拒绝恢复。恢复等待时间计入 session 的 `external_wait_or_intervention_ms`。
 

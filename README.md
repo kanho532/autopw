@@ -6,6 +6,21 @@ AutoPW 是一个代码驱动的 Web 应用审查插件：先读取源码并冻�
 
 支持三种审查范围：完整审查 `FULL`、指定 commit 到当前工作区的 `COMMIT_TO_WORKTREE`，以及两个已提交 SHA 之间的 `COMMIT_TO_COMMIT`。两种增量模式均只测试受影响功能及其直接回归路径，且不会相互混入工作区语义。
 
+## 安装
+
+### 推荐：交给 Agent 安装
+
+把本仓库 URL 或本地绝对路径交给当前 Agent，并直接发送：
+
+```text
+安装或更新 AutoPW：<仓库 URL 或本地绝对路径>。
+识别当前宿主，使用其官方插件安装方式；完成后验证 AutoPW 的三个 Skills 和 autopw-playwright MCP 已可用。
+```
+
+Agent 负责选择当前宿主的安装流程、处理更新并报告验证结果；用户不需要手工复制 Skills 或 MCP 配置。
+
+### 手动安装
+
 ## 运行要求
 
 - Node.js 18 或更高版本。
@@ -18,43 +33,49 @@ AutoPW 是一个代码驱动的 Web 应用审查插件：先读取源码并冻�
 
 - Codex：`.codex-plugin/plugin.json`
 - Claude Code：`.claude-plugin/plugin.json`
-- CodeBuddy：`.codebuddy-plugin/plugin.json`
-- WorkBuddy：`.workbuddy-plugin/plugin.json`
+- CodeBuddy 与采用其兼容运行时的 WorkBuddy：`.codebuddy-plugin/plugin.json`
+- `.workbuddy-plugin/plugin.json`：兼容元数据副本，不作为唯一安装依据
 - 其他支持 Agent Skills 与 MCP 的工具：`skills/` 与 `.mcp.json`
 
-四个入口共用同一个 `skills/` 和 `.mcp.json`，不要复制并单独修改技能内容。
-
-## 本地加载
+各入口共用同一个 `skills/` 和 `.mcp.json`，不要复制并单独修改技能内容。
 
 ### Codex
 
-通过已配置的 Codex 本地 marketplace 安装或更新本目录中的 `autopw`。安装后新建任务，使新技能和插件内置 MCP 工具进入任务上下文。
+通过已配置的 Codex local marketplace 安装或更新本目录中的 `autopw`。安装后必须新建任务，使新 Skills 和插件内置 MCP 工具进入任务上下文；已打开任务会保留旧技能清单，不能用于验证新版本。执行前应确认技能路径中的 cache 版本与已安装插件一致。
 
 ### Claude Code
 
+临时加载本地目录：
+
 ```bash
-claude --plugin-dir /absolute/path/to/autopw
+claude --plugin-dir <autopw 的绝对路径>
 ```
 
-加载后可使用 `/autopw:autopw-web-audit`、`/autopw:autopw-exploratory-testing` 和 `/autopw:autopw-browser-diagnostics`。修改插件后运行 `/reload-plugins`。
+持久安装时，先将包含 AutoPW 的 marketplace 加入 Claude Code，再安装 `autopw@<marketplace-name>`。可先做严格校验：
+
+```bash
+claude plugin validate <autopw 的绝对路径> --strict
+claude plugin marketplace add <marketplace URL 或本地 marketplace 根目录>
+claude plugin install autopw@<marketplace-name>
+```
+
+Claude Code 原生读取 `.claude-plugin/plugin.json`、`skills/` 和 `.mcp.json`；加载后可使用 `/autopw:autopw-web-audit`、`/autopw:autopw-exploratory-testing` 和 `/autopw:autopw-browser-diagnostics`。更新后新开会话，或在支持该命令的交互会话中运行 `/reload-plugins`。
 
 ### CodeBuddy
 
-```bash
-codebuddy --plugin-dir /absolute/path/to/autopw
-```
-
-修改插件后运行 `/reload-plugins`。CodeBuddy 也兼容仓库中的 Claude Code 清单，但保留 `.codebuddy-plugin/plugin.json` 便于明确识别。
+从插件页添加本地目录或 marketplace 并安装 AutoPW。CodeBuddy 读取 `.codebuddy-plugin/plugin.json`，该清单与仓库根目录的 `skills/`、`.mcp.json` 共用同一份内容。
 
 ### WorkBuddy
 
-WorkBuddy 当前按 Skills 与 MCP 两部分接入：
+若 WorkBuddy 提供插件页，添加本地 AutoPW 目录或 marketplace 并安装；采用 CodeBuddy 兼容运行时的版本使用 `.codebuddy-plugin/plugin.json`。安装后在新任务中确认三个 Skills 与 `autopw-playwright` MCP。
 
-1. 将 `skills/` 下的三个技能目录导入或复制到工作区的 `.codebuddy/skills/`。
-2. 将 `.mcp.json` 中的 `autopw-playwright` 配置合并到项目级 `.workbuddy/mcp.json` 或用户级 `~/.workbuddy/mcp.json`。
-3. 重新打开任务，并确认 MCP 工具列表中出现 `autopw-playwright` 的 `browser_*` 工具。
+不提供插件页的部署可使用手动兜底：
 
-`.workbuddy-plugin/plugin.json` 是为识别 Claude Code 兼容插件清单的 CodeBuddy/WorkBuddy 系宿主保留的兼容入口；不能自动加载插件目录的 WorkBuddy 版本仍需执行上面的分步安装。
+1. 按该 WorkBuddy 部署的 Skills 配置方式导入 `skills/` 下的三个目录；
+2. 按该部署的 MCP 配置方式导入根目录 `.mcp.json` 中的 `autopw-playwright`；
+3. 新开任务，并确认 `autopw-playwright` 的 `browser_*` 工具可见。
+
+`.workbuddy-plugin/plugin.json` 保留为兼容元数据；实际以当前 WorkBuddy 运行时识别的插件入口为准，避免同时重复注册同一 MCP。
 
 ### 其他工具
 
@@ -62,7 +83,7 @@ WorkBuddy 当前按 Skills 与 MCP 两部分接入：
 
 ## Playwright 执行边界
 
-浏览器用例默认使用 Playwright Test。AutoPW 先复用能够精确覆盖冻结用例的现有测试，只为覆盖缺口生成本次运行专属 `.spec.*`，并通过一次 runner 调用批量执行。项目没有 Playwright Test 时，使用工作区外、本次运行专属且版本固定的临时工具目录，不修改目标项目依赖或 lockfile。
+浏览器用例默认使用 Playwright Test。AutoPW 先复用能够精确覆盖冻结用例的现有测试，只为覆盖缺口生成本次运行专属 `.spec.*`，并通过一次 runner 调用批量执行。CLI、config 与 spec 必须绑定到同一个版本固定的 Playwright package root，spec 过滤使用相对 `testDir` 的路径；禁止混用 `npx` CLI 和其他 `_npx` 缓存中的测试模块。项目没有 Playwright Test 时，使用工作区外、本次运行专属且版本固定的临时工具目录，不修改目标项目依赖或 lockfile。
 
 插件内置的 Playwright MCP 只用于定向诊断，不参与初始执行。Playwright Test 首次失败且证据不足时总是清洁重放一次；即使同一业务不变量出现 API 通过、浏览器失败，也不能跳过重放。重放通过或失败特征变化时标记为疑似 flaky；只有相同失败再次出现、证据仍不足，且冻结的 MCP 触发条件与实际原因精确匹配时，确定性路由器才允许启动 MCP。
 
@@ -74,7 +95,7 @@ WorkBuddy 当前按 Skills 与 MCP 两部分接入：
 
 `skills/autopw-web-audit/scripts/autopw-run.mjs` 读取冻结计划并调用统一的 `executeCase(testCase, context)` 执行器接口，按依赖和资源锁调度用例、自动完成一次清洁重放，并保存 lane 与 Router 制品。Router 只输出 `DONE`、`REPLAY_ONCE`、`START_MCP` 或 `INVALID_RESULT`；终态单独使用 `PASS`、`FAIL`、`BLOCKED`、`NOT_RUN` 或 `FLAKY`。失败特征与重放执行上下文均以可读字段逐项保存和比较。
 
-服务通过 run 专属的 `runtime.spawn()` 启动：Windows `.cmd/.bat` 自动适配，PID 与命令写入进程账本，并在正常或异常退出时清理进程树。Checkpoint 支持同一冻结计划与执行器的 `--resume`，避免从头重跑已完成用例。MCP 证据通过 staging 导入器复制进 run root 并记录 SHA-256 清单。
+服务通过 run 专属的 `runtime.spawn()` 启动：Codex 负责选择当前平台可执行的命令，Orchestrator 不自动解析或包装 `.cmd/.bat`，只把 PID 与命令写入进程账本，并在正常或异常退出时清理进程树。Checkpoint 支持同一冻结计划与执行器的 `--resume`，避免从头重跑已完成用例。MCP 证据通过 staging 导入器复制进 run root 并记录 SHA-256 清单。
 
 ## 测试时间记录
 
@@ -82,7 +103,7 @@ WorkBuddy 当前按 Skills 与 MCP 两部分接入：
 
 ## 最终输出验证
 
-`skills/autopw-web-audit/scripts/autopw-validate.mjs` 是审查交付前的确定性验收门。JSON Schema 由 AJV 在运行时执行，Validator 只补充跨制品语义检查：冻结计划、lane 归属、浏览器路由、MCP 授权闭环、证据文件、计时、报告引用和五种终态计数。结果为 `valid: true` 时才允许交付报告。
+`skills/autopw-web-audit/scripts/autopw-validate.mjs` 是审查交付前的确定性验收门。JSON Schema 由 AJV 在运行时执行，Validator 只补充跨制品语义检查：冻结计划、lane 归属、浏览器路由、MCP 授权闭环、证据文件、计时、报告引用和五种终态计数。`report.md` 或 `validation.json` 缺失均表示审查未完成；只有 Validator 退出码为 0 且结果为 `valid: true` 时才允许交付报告。
 
 ## Commit 到工作区增量审查
 
