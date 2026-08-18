@@ -19,7 +19,9 @@ AutoPW 是一个代码驱动的 Web 应用审查插件：先读取源码并冻�
 
 Agent 负责选择当前宿主的安装流程、处理更新并报告验证结果；用户不需要手工复制 Skills 或 MCP 配置。
 
-### 手动安装
+## 手动安装
+
+不使用 Agent 自动安装时，按下方宿主类型选择对应的本地加载、marketplace 或 Skills + MCP 方法。
 
 ## 运行要求
 
@@ -80,6 +82,39 @@ Claude Code 原生读取 `.claude-plugin/plugin.json`、`skills/` 和 `.mcp.json
 ### 其他工具
 
 将三个技能目录安装到宿主支持的 Agent Skills 目录，并把 `.mcp.json` 中 `mcpServers.autopw-playwright` 合并到该宿主的 MCP 配置。若宿主不支持插件自动启动 MCP，这两步必须分别完成。
+
+## 使用方法
+
+把目标仓库路径、测试环境和审查范围交给 Agent。Agent 会先读取源码并冻结测试计划，再执行 API、静态、状态和浏览器通道，最后生成报告并运行 Validator。
+
+### 完整审查：`FULL`
+
+适用于首次审查或希望覆盖整个 Web 应用：
+
+```text
+使用 AutoPW 对 <仓库路径> 做一次 FULL 完整 Web 审查。
+启动本地测试服务，执行 API、静态、状态和 Playwright 测试，生成中文报告；只有 validation.json 的 valid=true 才算完成。
+```
+
+### Commit 到工作区：`COMMIT_TO_WORKTREE`
+
+适用于“某个基线提交到当前未提交工作区”的增量审查，会包含当前工作区改动：
+
+```text
+使用 AutoPW 审查 <仓库路径> 从 baseline <完整 commit SHA> 到当前工作区的改动。
+范围模式使用 COMMIT_TO_WORKTREE，只验证受影响功能及直接回归路径，不把无关旧问题算入本次发现。
+```
+
+### Commit 到 Commit：`COMMIT_TO_COMMIT`
+
+适用于两个已提交版本之间的差异，不纳入当前工作区未提交内容：
+
+```text
+使用 AutoPW 审查 <仓库路径> 从 commit <完整 baseline SHA> 到 commit <完整 head SHA> 的差异。
+范围模式使用 COMMIT_TO_COMMIT，只验证这两个提交之间的变更及直接回归路径，并生成最终报告和 validation.json。
+```
+
+增量审查必须提供完整 SHA；Agent 不应静默替换 baseline，也不应把工作区状态混入 `COMMIT_TO_COMMIT`。审查中断或 Validator 未通过时，只报告“未完成”，不要交付应用结论。
 
 ## Playwright 执行边界
 
