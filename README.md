@@ -1,5 +1,7 @@
 # AutoPW
 
+> 推荐模型：GPT-5.6 Luna 或 DSV4F。
+
 AutoPW 是一个代码驱动的 Web 应用审查插件：先读取源码并冻结风险测试计划，再并行执行 API 与 Playwright Test，使用确定性规则仅在浏览器失败证据不足时启动 Playwright MCP 诊断，并通过日志、状态回读和静态检查补充证据，最后生成带每次测试耗时的固定格式中文报告。
 
 核心边界固定为：`Plan` 表达测试意图，`Result` 保存执行事实，`Decision` 只决定下一步动作，`Report` 负责解释结果。Agent 负责理解业务、设计用例与判定根因；`autopw-run.mjs`、Router 和 Validator 负责执行纪律。
@@ -160,3 +162,5 @@ npm test
 ```
 
 发布前还应运行 Skill 与插件验证器，并在不包含目标项目依赖修改的真实 Web 应用上执行一次前向测试。
+
+> 若想查看失败网页证据或截图，请直接询问 Agent，并说明要查看的用例 ID 或失败步骤。
