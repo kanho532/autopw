@@ -29,6 +29,8 @@ Core 负责 Schema 校验、调度、replay、MCP gate、artifact 校验和 fina
 
 开始执行前先运行 `autopw-preflight.mjs`，读取其 `preflight.json`，再决定服务和浏览器执行器。
 
+目标项目的运行知识缓存位于 `<target-repo>/.autopw/project-memory.json`。只有 `VERIFIED_RUNTIME` 事实才能写入；缓存缺失、指纹变化或轻量复核失败时，回退完整 preflight。
+
 ## 4. 状态与 Router action
 
 终态只有：`PASS`、`FAIL`、`BLOCKED`、`NOT_RUN`、`FLAKY`。
@@ -45,15 +47,24 @@ Router action 只有：`DONE`、`REPLAY_ONCE`、`START_MCP`、`INVALID_RESULT`�
 - 不自行修改最终状态或把 `FLAKY` 当成 `PASS`。
 - 不把静态怀疑写成运行时缺陷。
 
-## 6. 常用命令
+## 6. Project Memory
+
+Memory 只保存已经实际确认的启动命令、运行时版本、Playwright 路径、浏览器路径、端口和 executor hints。`package.json` 或配置文件中的候选命令只能作为 `verified: false` 的发现，不能直接写入 Memory。
+
+指纹只覆盖运行时相关文件：包清单和 lockfile、Java/Gradle 配置、应用配置、Vite/Playwright 配置、`.env.example`、Docker 配置。普通源码、README 和 audit artifact 不会导致缓存失效。
+
+Memory 缺失或失效时读取完整 preflight；Memory 命中时仍复核命令、Jar、Playwright package root、Chromium 和目标端口。缺少 Memory、Schema validation 失败、executor/lifecycle 异常或 Playwright resolution 异常时，才读取详细 runtime reference。
+
+## 7. 常用命令
 
 ```bash
 node <skill-dir>/scripts/autopw-preflight.mjs --root <target-repo> --output <audit-root>/preflight.json
+node <skill-dir>/scripts/memory/update.mjs --root <target-repo> --input <verified-facts.json> --preflight <audit-root>/preflight.json
 node <skill-dir>/scripts/autopw-run.mjs --plan <audit-root>/execution-plan.json --run-root <audit-root>/runs/<run-id> --executor-module <audit-root>/executors.mjs --output <audit-root>/run-summary.json
 node <skill-dir>/scripts/autopw-validate.mjs --plan <audit-root>/execution-plan.json --run-root <audit-root>/runs/<run-id> --report <audit-root>/report.md --output <audit-root>/validation.json
 ```
 
-## 7. 详细文档按需读取
+## 8. 详细文档按需读取
 
 - 增量范围：`commit-range-review.md`
 - 执行器、浏览器和 evidence：`execution-and-evidence.md`

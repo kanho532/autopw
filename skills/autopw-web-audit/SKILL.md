@@ -27,7 +27,7 @@ description: 审查受信任的本地 Web 应用源码、Git 变更、两个 com
 <测试项目根目录>/autopw-output/<运行模式>-<UTC时间>/
 ```
 
-其中 `<运行模式>` 只能是 `FULL`、`COMMIT_TO_WORKTREE` 或 `COMMIT_TO_COMMIT`；`<UTC时间>` 使用 `YYYYMMDDTHHmmssZ`，例如 `COMMIT_TO_COMMIT-20260818T093000Z`。该目录记为 `<audit-root>`，`preflight.json`、计划、`change-scope.md`、`runs/`、报告、`validation.json` 和所有证据都必须位于其中；同一项目的不同审查不得复用旧目录。
+其中 `<运行模式>` 只能是 `FULL`、`COMMIT_TO_WORKTREE` 或 `COMMIT_TO_COMMIT`；`<UTC时间>` 使用 `YYYYMMDDTHHmmssZ`，例如 `COMMIT_TO_COMMIT-20260818T093000Z`。该目录记为 `<audit-root>`，`preflight.json`、计划、`change-scope.md`、`runs/`、报告、`validation.json` 和所有证据都必须位于其中；目标项目的 `.autopw/project-memory.json` 是跨审查的项目配置缓存，不属于本次 audit artifact；同一项目的不同审查不得复用旧目录。
 
 ## 输出与边界
 
@@ -65,7 +65,7 @@ description: 审查受信任的本地 Web 应用源码、Git 变更、两个 com
 
 ### 1. 检查源码
 
-先读取 `quick-contract.md`，再运行一次环境探测：
+先读取 `quick-contract.md` 和目标项目的 `.autopw/project-memory.json`（如果存在），再运行环境探测：
 
 ```bash
 node <skill-dir>/scripts/autopw-preflight.mjs \
@@ -73,7 +73,7 @@ node <skill-dir>/scripts/autopw-preflight.mjs \
   --output <audit-root>/preflight.json
 ```
 
-读取 `preflight.json`，据此选择已有 jar、Maven、包管理器和 Playwright Test 执行路径；preflight 只探测环境，不替代测试规划。随后在打开浏览器前检查仓库说明、Git 状态、包清单、启动配置、路由、API 客户端、服务端端点、身份验证、持久化和现有测试。构建精简功能映射，将 UI 操作关联到 API 和权威状态。把代码矛盾记录为静态假设；没有运行证据时不得称为已验证缺陷。
+读取 `preflight.json`，据此选择已有 jar、Maven、包管理器和 Playwright Test 执行路径；preflight 会在 Memory 指纹命中且轻量复核通过时复用缓存，否则执行完整探测。preflight 只探测环境，不替代测试规划。只有实际启动成功或运行时事实确认后，才调用 `scripts/memory/update.mjs` 写入 Memory。随后在打开浏览器前检查仓库说明、Git 状态、包清单、启动配置、路由、API 客户端、服务端端点、身份验证、持久化和现有测试。构建精简功能映射，将 UI 操作关联到 API 和权威状态。把代码矛盾记录为静态假设；没有运行证据时不得称为已验证缺陷。
 
 ### 2. 冻结测试意图
 

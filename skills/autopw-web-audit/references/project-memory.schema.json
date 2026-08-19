@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autopw.local/schemas/project-memory.schema.json",
+  "title": "AutoPW Project Memory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "project_fingerprint",
+    "updated_at",
+    "runtime",
+    "environment",
+    "verified"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "project_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "fingerprint_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        }
+      }
+    },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "node_version": { "type": "string" },
+        "npm_version": { "type": "string" },
+        "java_version": { "type": "string" },
+        "maven_version": { "type": "string" },
+        "package_manager": { "type": "string" },
+        "playwright_version": { "type": "string" },
+        "playwright_package_root": { "type": "string" },
+        "chromium_executable": { "type": "string" }
+      }
+    },
+    "verified": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend_start", "frontend_start", "playwright"],
+      "properties": {
+        "backend_start": { "type": "boolean" },
+        "frontend_start": { "type": "boolean" },
+        "playwright": { "type": "boolean" },
+        "environment": { "type": "boolean" }
+      }
+    },
+    "executor_hints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "api": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "base_url": { "type": "string", "format": "uri" },
+            "auth": { "type": "string" }
+          }
+        },
+        "browser": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "base_url": { "type": "string", "format": "uri" },
+            "playwright_package_root": { "type": "string" },
+            "storage_state": { "type": "string" }
+          }
+        }
+      }
+    },
+    "preflight_snapshot": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backend": { "$ref": "#/$defs/runtime_target" },
+        "frontend": { "$ref": "#/$defs/runtime_target" }
+      }
+    },
+    "runtime_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy", "command", "cwd", "source"],
+      "properties": {
+        "strategy": { "type": "string", "minLength": 1 },
+        "command": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "cwd": { "type": "string" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "health_url": { "type": "string", "format": "uri" },
+        "source": { "const": "VERIFIED_RUNTIME" }
+      }
+    }
+  }
+}

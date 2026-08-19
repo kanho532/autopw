@@ -11,7 +11,8 @@ const schemaFiles = [
   'audit-session.schema.json',
   'lane-result.schema.json',
   'router-input.schema.json',
-  'router-decision.schema.json'
+  'router-decision.schema.json',
+  'project-memory.schema.json'
 ]
 
 const ajv = new Ajv2020({ allErrors: true, strict: false })
@@ -30,7 +31,8 @@ const aliases = new Map([
   ['lane-result', schemaIds.get('lane-result.schema.json')],
   ['router-input', schemaIds.get('router-input.schema.json')],
   ['router-case', `${schemaIds.get('router-input.schema.json')}#/$defs/router_case`],
-  ['router-decision', schemaIds.get('router-decision.schema.json')]
+  ['router-decision', schemaIds.get('router-decision.schema.json')],
+  ['project-memory', schemaIds.get('project-memory.schema.json')]
 ])
 
 function validatorFor(name) {

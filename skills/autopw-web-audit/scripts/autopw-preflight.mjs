@@ -6,6 +6,9 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
+import { computeProjectFingerprint } from './memory/fingerprint.mjs'
+import { memoryMatchesFingerprint, readProjectMemory, projectMemoryPath } from './memory/load.mjs'
+
 const PLAYWRIGHT_PACKAGES = new Set(['@playwright/test', 'playwright'])
 const PACKAGE_MANAGERS = [
   { name: 'npm', lockfile: 'package-lock.json', command: 'npm' },
@@ -276,8 +279,98 @@ async function detectTargetPorts(root, packageJson, env) {
   }
 }
 
-export async function runPreflight({ root = process.cwd(), output = null, configuredPlaywrightRoots = [], browserRoots = [], env = process.env } = {}) {
+function commandForTarget(root, target) {
+  const command = target?.command?.[0]
+  if (!command) return null
+  if (path.isAbsolute(command) || !/[\\/]/.test(command)) return command
+  return path.resolve(root, target.cwd ?? '.', command)
+}
+
+function jarExists(root, target) {
+  const index = target?.command?.indexOf('-jar') ?? -1
+  if (index < 0 || !target.command[index + 1]) return true
+  return fs.existsSync(path.resolve(root, target.cwd ?? '.', target.command[index + 1]))
+}
+
+async function verifyCachedEnvironment(root, memory, env) {
+  const checks = []
+  const addCheck = (name, valid, detail) => checks.push({ name, valid: Boolean(valid), detail })
+  for (const [name, key] of [['backend_start', 'backend'], ['frontend_start', 'frontend']]) {
+    if (!memory.verified[name]) continue
+    const target = memory.runtime[key]
+    const command = commandForTarget(root, target)
+    const commandResult = command ? probeCommand(command, ['--version'], { env }) : { available: false, detail: 'Verified runtime command is missing' }
+    addCheck(`${key}.command`, commandResult.available, commandResult.detail)
+    if (key === 'backend') addCheck(`${key}.jar`, jarExists(root, target), 'Verified jar path exists')
+  }
+
+  if (memory.verified.playwright) {
+    const packageRoot = memory.environment.playwright_package_root
+    const executable = memory.environment.chromium_executable
+    addCheck('playwright.package_root', Boolean(packageRoot && fs.existsSync(packageRoot)), packageRoot || 'Playwright package root is missing')
+    addCheck('playwright.chromium', Boolean(executable && fs.existsSync(executable)), executable || 'Chromium executable is missing')
+  }
+
+  const ports = [...new Set([
+    memory.runtime.backend?.port,
+    memory.runtime.frontend?.port,
+  ].filter(Boolean))]
+  const portChecks = await Promise.all(ports.map(inspectPort))
+  for (const result of portChecks) addCheck(`port.${result.port}`, !result.detail || result.available || result.in_use, result.detail || (result.in_use ? 'Port is already in use' : 'Port is available'))
+
+  return { valid: checks.every((check) => check.valid), checks, ports: portChecks }
+}
+
+function cachedPreflightSnapshot(root, memory, verification) {
+  if (memory.preflight_snapshot) return JSON.parse(JSON.stringify(memory.preflight_snapshot))
+  const environment = memory.environment
+  const ports = verification.ports
+  return {
+    root,
+    node: { available: Boolean(environment.node_version), version: environment.node_version ?? null, detail: 'Reused from verified project memory' },
+    npm: { available: Boolean(environment.npm_version), version: environment.npm_version ?? null, detail: 'Reused from verified project memory' },
+    java: { available: Boolean(environment.java_version), version: environment.java_version ?? null, detail: 'Reused from verified project memory' },
+    maven: { available: Boolean(environment.maven_version), version: environment.maven_version ?? null, detail: 'Reused from verified project memory' },
+    artifacts: { available: false, existing_jars: [], fat_jars: [], detail: 'No artifact snapshot in project memory' },
+    package_manager: { available: Boolean(environment.package_manager), name: environment.package_manager ?? null, lockfile: null, detail: 'Reused from verified project memory' },
+    playwright: {
+      available: Boolean(environment.playwright_package_root),
+      package_name: '@playwright/test',
+      version: environment.playwright_version ?? null,
+      package_root: environment.playwright_package_root ?? null,
+      browser: { chromium: { available: Boolean(environment.chromium_executable), executable_path: environment.chromium_executable, detail: 'Reused from verified project memory' } },
+      detail: 'Reused from verified project memory',
+    },
+    target_ports: { available: ports.length > 0, ports, detail: 'Reused from verified project memory' },
+    recommendation: { backend_start: memory.runtime.backend?.strategy ?? 'UNKNOWN', browser_executor: memory.verified.playwright ? 'PLAYWRIGHT_TEST' : 'UNAVAILABLE' },
+  }
+}
+
+export async function runPreflight({ root = process.cwd(), output = null, configuredPlaywrightRoots = [], browserRoots = [], env = process.env, useMemory = true, refresh = false } = {}) {
   const resolvedRoot = path.resolve(root)
+  const fingerprint = computeProjectFingerprint(resolvedRoot)
+  const memoryRecord = readProjectMemory(resolvedRoot)
+  if (useMemory && !refresh && memoryRecord.memory && memoryMatchesFingerprint(memoryRecord.memory, fingerprint)) {
+    const verification = await verifyCachedEnvironment(resolvedRoot, memoryRecord.memory, env)
+    if (verification.valid) {
+      const result = cachedPreflightSnapshot(resolvedRoot, memoryRecord.memory, verification)
+      result.root = resolvedRoot
+      result.project_fingerprint = fingerprint.project_fingerprint
+      result.memory = {
+        status: 'REUSED',
+        path: memoryRecord.path,
+        updated_at: memoryRecord.memory.updated_at,
+        verification,
+      }
+      if (output) {
+        const outputPath = path.resolve(output)
+        fs.mkdirSync(path.dirname(outputPath), { recursive: true })
+        fs.writeFileSync(outputPath, `${JSON.stringify(result, null, 2)}\n`, 'utf8')
+      }
+      return result
+    }
+  }
+
   const packageJson = readJson(path.join(resolvedRoot, 'package.json'))
   const node = probeTool(process.execPath, ['--version'], undefined, env)
   const npm = probeTool('npm', ['--version'], undefined, env)
@@ -305,6 +398,12 @@ export async function runPreflight({ root = process.cwd(), output = null, config
       backend_start: artifacts.fat_jars.length ? 'EXISTING_JAR' : maven.available ? 'MAVEN' : packageManager.available ? 'PACKAGE_MANAGER' : 'UNKNOWN',
       browser_executor: playwright.browser.chromium.available ? 'PLAYWRIGHT_TEST' : 'UNAVAILABLE',
     },
+    project_fingerprint: fingerprint.project_fingerprint,
+    memory: {
+      status: refresh ? 'BYPASSED' : memoryRecord.status === 'AVAILABLE' ? 'STALE' : memoryRecord.status,
+      path: projectMemoryPath(resolvedRoot),
+      reason: refresh ? 'Refresh requested' : memoryRecord.status === 'AVAILABLE' ? 'Project fingerprint changed or cached environment failed verification' : 'No reusable project memory found',
+    },
   }
 
   if (output) {
@@ -323,6 +422,8 @@ function parseArgs(argv) {
     if (arg === '--help' || arg === '-h') return { help: true }
     if (arg === '--root') { options.root = next; index += 1; continue }
     if (arg === '--output') { options.output = next; index += 1; continue }
+    if (arg === '--refresh') { options.refresh = true; continue }
+    if (arg === '--no-memory') { options.useMemory = false; continue }
     if (arg === '--playwright-root' || arg === '--playwright-package-root') { options.configuredPlaywrightRoots.push(next); index += 1; continue }
     throw new Error(`Unknown argument: ${arg}`)
   }
@@ -334,7 +435,7 @@ function parseArgs(argv) {
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv)
   if (options.help) {
-    console.log('Usage: node autopw-preflight.mjs --root <target-repo> --output <audit-root>/preflight.json [--playwright-root <package-root>]')
+    console.log('Usage: node autopw-preflight.mjs --root <target-repo> --output <audit-root>/preflight.json [--playwright-root <package-root>] [--refresh|--no-memory]')
     return 0
   }
   const result = await runPreflight(options)
