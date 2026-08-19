@@ -37,20 +37,16 @@
         "npm_version": { "type": "string" },
         "java_version": { "type": "string" },
         "maven_version": { "type": "string" },
-        "package_manager": { "type": "string" },
-        "playwright_version": { "type": "string" },
-        "playwright_package_root": { "type": "string" },
-        "chromium_executable": { "type": "string" }
+        "package_manager": { "type": "string" }
       }
     },
     "verified": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["backend_start", "frontend_start", "playwright"],
+      "required": ["backend_start", "frontend_start"],
       "properties": {
         "backend_start": { "type": "boolean" },
         "frontend_start": { "type": "boolean" },
-        "playwright": { "type": "boolean" },
         "environment": { "type": "boolean" }
       }
     },
@@ -71,7 +67,6 @@
           "additionalProperties": false,
           "properties": {
             "base_url": { "type": "string", "format": "uri" },
-            "playwright_package_root": { "type": "string" },
             "storage_state": { "type": "string" }
           }
         }

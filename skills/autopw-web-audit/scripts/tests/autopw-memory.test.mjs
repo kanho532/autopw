@@ -43,6 +43,7 @@ test('updateProjectMemory persists only explicitly verified runtime facts', () =
   assert.equal(memory.runtime.backend, undefined)
   assert.equal(memory.runtime.frontend.source, 'VERIFIED_RUNTIME')
   assert.deepEqual(memory.environment, {})
+  assert.equal(memory.verified.playwright, undefined)
   assert.equal(validateSchema('project-memory', memory).valid, true)
   assert.equal(readProjectMemory(root).status, 'AVAILABLE')
 })

@@ -1,5 +1,7 @@
 # AutoPW
 
+当前版本已内置固定版本的 `@playwright/test@1.62.1` 与 Playwright Test 批量执行器。默认使用 `AUTOPW_RUNTIME`，目标项目无需安装 Playwright；如需复用目标项目自身的测试运行时，可显式选择 `PROJECT_NATIVE`。Project Memory 只缓存已验证的项目启动与环境事实，不缓存 Playwright 或 Chromium 路径。Chromium 仅检查现有可用性，本插件不负责安装或下载浏览器。
+
 > 推荐模型：GPT-5.6 Luna 或 DSV4F。
 
 AutoPW 是一个代码驱动的 Web 应用审查插件：先读取源码并冻结风险测试计划，再并行执行 API 与 Playwright Test，使用确定性规则仅在浏览器失败证据不足时启动 Playwright MCP 诊断，并通过日志、状态回读和静态检查补充证据，最后生成带每次测试耗时的固定格式中文报告。
@@ -27,7 +29,7 @@ Agent 负责选择当前宿主的安装流程、处理更新并报告验证结�
 
 ## 运行要求
 
-- Node.js 18 或更高版本。
+- Node.js 20 或更高版本。
 - `npx` 可用；首次启动 `autopw-playwright` 时需要从 npm 获取固定版本 `@playwright/mcp@0.0.79`。
 - 只测试你有权审查的本地或可信测试环境。
 

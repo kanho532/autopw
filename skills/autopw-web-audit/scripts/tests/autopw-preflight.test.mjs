@@ -25,7 +25,7 @@ test('preflight discovers package manager, jars, Playwright and Chromium indepen
   write(path.join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9')
   write(path.join(root, 'target', 'app.jar'), 'jar')
   write(path.join(root, '.env.example'), 'API_PORT=43124\n')
-  write(path.join(playwrightRoot, 'package.json'), JSON.stringify({ name: 'playwright', version: '1.62.1' }))
+  write(path.join(playwrightRoot, 'package.json'), JSON.stringify({ name: 'playwright', version: '9.9.9' }))
   write(path.join(playwrightRoot, 'cli.js'))
   write(path.join(playwrightRoot, 'test.js'))
   const executable = path.join(browserRoot, 'chromium-123', process.platform === 'win32' ? 'chrome-win' : 'chrome-linux', process.platform === 'win32' ? 'chrome.exe' : 'chrome')
@@ -49,6 +49,15 @@ test('preflight discovers package manager, jars, Playwright and Chromium indepen
   assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')), result)
   assert.ok(result.target_ports.ports.some((item) => item.port === 43123))
   assert.ok(result.target_ports.ports.some((item) => item.port === 43124))
+
+  const native = await runPreflight({
+    root,
+    playwrightMode: 'PROJECT_NATIVE',
+    configuredPlaywrightRoots: [path.join(root, 'configured-runtime')],
+    browserRoots: [browserRoot],
+    useMemory: false,
+  })
+  assert.equal(native.playwright.version, '9.9.9')
 })
 
 test('preflight keeps going when Maven and Playwright are unavailable', async () => {
@@ -56,6 +65,7 @@ test('preflight keeps going when Maven and Playwright are unavailable', async ()
   write(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node test.js' } }))
   const result = await runPreflight({
     root,
+    playwrightMode: 'PROJECT_NATIVE',
     env: {
       ...process.env,
       PATH: '',

@@ -1,7 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const SUPPORTED_PACKAGES = new Set(['@playwright/test', 'playwright'])
+export const PLAYWRIGHT_MODES = new Set(['AUTOPW_RUNTIME', 'PROJECT_NATIVE'])
+const DEFAULT_PLUGIN_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..')
 
 function readPackage(packageRoot) {
   const manifestPath = path.join(packageRoot, 'package.json')
@@ -48,7 +51,12 @@ export function inspectPlaywrightRuntime(packageRoot) {
   }
 }
 
-export function resolvePlaywrightRuntime({ projectRoot, packageRoot, searchRoots = [] } = {}) {
+export function resolveBundledPlaywrightRuntime({ pluginRoot = DEFAULT_PLUGIN_ROOT, packageRoot } = {}) {
+  const resolvedPackageRoot = packageRoot ?? path.join(path.resolve(pluginRoot), 'node_modules', '@playwright', 'test')
+  return inspectPlaywrightRuntime(resolvedPackageRoot)
+}
+
+export function resolveProjectPlaywrightRuntime({ projectRoot, packageRoot, searchRoots = [] } = {}) {
   const roots = [packageRoot, projectRoot, ...searchRoots].filter(Boolean)
   const visited = new Set()
   const rejected = []
@@ -71,6 +79,12 @@ export function resolvePlaywrightRuntime({ projectRoot, packageRoot, searchRoots
       ...visited
     ].join(', ')}${rejected.length ? `. Last error: ${rejected.at(-1)}` : ''}`
   )
+}
+
+export function resolvePlaywrightRuntime(options = {}) {
+  if (options.mode === 'AUTOPW_RUNTIME') return resolveBundledPlaywrightRuntime(options)
+  if (options.mode === 'PROJECT_NATIVE') return resolveProjectPlaywrightRuntime(options)
+  return resolveProjectPlaywrightRuntime(options)
 }
 
 export function relativePlaywrightSpec(testDir, specPath) {

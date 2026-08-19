@@ -8,6 +8,11 @@ import { spawnSync } from 'node:child_process'
 
 import { computeProjectFingerprint } from './memory/fingerprint.mjs'
 import { memoryMatchesFingerprint, readProjectMemory, projectMemoryPath } from './memory/load.mjs'
+import {
+  PLAYWRIGHT_MODES,
+  resolveBundledPlaywrightRuntime,
+  resolveProjectPlaywrightRuntime
+} from './playwright/runtime-resolver.mjs'
 
 const PLAYWRIGHT_PACKAGES = new Set(['@playwright/test', 'playwright'])
 const PACKAGE_MANAGERS = [
@@ -197,15 +202,31 @@ function findChromiumExecutable(browserRoot) {
   return null
 }
 
-function detectPlaywright(root, configuredRoots, browserRoots, env) {
+function detectPlaywright(root, configuredRoots, browserRoots, env, { mode = 'AUTOPW_RUNTIME', pluginRoot } = {}) {
+  if (!PLAYWRIGHT_MODES.has(mode)) throw new Error(`Unsupported Playwright mode: ${mode}`)
   let runtime = null
-  for (const candidate of playwrightPackageCandidates(root, configuredRoots)) {
-    runtime = readPlaywrightPackage(candidate)
-    if (runtime) break
+  if (mode === 'AUTOPW_RUNTIME') {
+    try {
+      const bundled = resolveBundledPlaywrightRuntime({ pluginRoot })
+      runtime = { package_name: bundled.package_name, version: bundled.version, package_root: bundled.package_root, manifest_path: bundled.manifest_path }
+    } catch {
+      runtime = null
+    }
+  } else {
+    try {
+      const native = resolveProjectPlaywrightRuntime({ projectRoot: root, packageRoot: configuredRoots[0], searchRoots: configuredRoots.slice(1) })
+      runtime = { package_name: native.package_name, version: native.version, package_root: native.package_root, manifest_path: native.manifest_path }
+    } catch {
+      for (const candidate of playwrightPackageCandidates(root, configuredRoots)) {
+        runtime = readPlaywrightPackage(candidate)
+        if (runtime) break
+      }
+    }
   }
   if (!runtime) {
     return {
       available: false,
+      mode,
       package_name: null,
       version: null,
       package_root: null,
@@ -222,6 +243,7 @@ function detectPlaywright(root, configuredRoots, browserRoots, env) {
   }
   return {
     available: true,
+    mode,
     ...runtime,
     browser: {
       chromium: {
@@ -304,13 +326,6 @@ async function verifyCachedEnvironment(root, memory, env) {
     if (key === 'backend') addCheck(`${key}.jar`, jarExists(root, target), 'Verified jar path exists')
   }
 
-  if (memory.verified.playwright) {
-    const packageRoot = memory.environment.playwright_package_root
-    const executable = memory.environment.chromium_executable
-    addCheck('playwright.package_root', Boolean(packageRoot && fs.existsSync(packageRoot)), packageRoot || 'Playwright package root is missing')
-    addCheck('playwright.chromium', Boolean(executable && fs.existsSync(executable)), executable || 'Chromium executable is missing')
-  }
-
   const ports = [...new Set([
     memory.runtime.backend?.port,
     memory.runtime.frontend?.port,
@@ -321,8 +336,13 @@ async function verifyCachedEnvironment(root, memory, env) {
   return { valid: checks.every((check) => check.valid), checks, ports: portChecks }
 }
 
-function cachedPreflightSnapshot(root, memory, verification) {
-  if (memory.preflight_snapshot) return JSON.parse(JSON.stringify(memory.preflight_snapshot))
+function cachedPreflightSnapshot(root, memory, verification, playwright) {
+  if (memory.preflight_snapshot) {
+    const snapshot = JSON.parse(JSON.stringify(memory.preflight_snapshot))
+    snapshot.playwright = playwright
+    snapshot.recommendation = { ...(snapshot.recommendation ?? {}), browser_executor: playwright.browser.chromium.available ? 'PLAYWRIGHT_TEST' : 'UNAVAILABLE' }
+    return snapshot
+  }
   const environment = memory.environment
   const ports = verification.ports
   return {
@@ -333,27 +353,22 @@ function cachedPreflightSnapshot(root, memory, verification) {
     maven: { available: Boolean(environment.maven_version), version: environment.maven_version ?? null, detail: 'Reused from verified project memory' },
     artifacts: { available: false, existing_jars: [], fat_jars: [], detail: 'No artifact snapshot in project memory' },
     package_manager: { available: Boolean(environment.package_manager), name: environment.package_manager ?? null, lockfile: null, detail: 'Reused from verified project memory' },
-    playwright: {
-      available: Boolean(environment.playwright_package_root),
-      package_name: '@playwright/test',
-      version: environment.playwright_version ?? null,
-      package_root: environment.playwright_package_root ?? null,
-      browser: { chromium: { available: Boolean(environment.chromium_executable), executable_path: environment.chromium_executable, detail: 'Reused from verified project memory' } },
-      detail: 'Reused from verified project memory',
-    },
+    playwright,
     target_ports: { available: ports.length > 0, ports, detail: 'Reused from verified project memory' },
-    recommendation: { backend_start: memory.runtime.backend?.strategy ?? 'UNKNOWN', browser_executor: memory.verified.playwright ? 'PLAYWRIGHT_TEST' : 'UNAVAILABLE' },
+    recommendation: { backend_start: memory.runtime.backend?.strategy ?? 'UNKNOWN', browser_executor: playwright.browser.chromium.available ? 'PLAYWRIGHT_TEST' : 'UNAVAILABLE' },
   }
 }
 
-export async function runPreflight({ root = process.cwd(), output = null, configuredPlaywrightRoots = [], browserRoots = [], env = process.env, useMemory = true, refresh = false } = {}) {
+export async function runPreflight({ root = process.cwd(), output = null, configuredPlaywrightRoots = [], browserRoots = [], env = process.env, useMemory = true, refresh = false, playwrightMode = 'AUTOPW_RUNTIME', pluginRoot } = {}) {
   const resolvedRoot = path.resolve(root)
   const fingerprint = computeProjectFingerprint(resolvedRoot)
   const memoryRecord = readProjectMemory(resolvedRoot)
+  const configuredRoots = [...configuredPlaywrightRoots, env.AUTOPW_PLAYWRIGHT_PACKAGE_ROOT, env.AUTOPW_PLAYWRIGHT_ROOT, env.PLAYWRIGHT_PACKAGE_ROOT].filter(Boolean)
+  const playwright = detectPlaywright(resolvedRoot, configuredRoots, browserRoots, env, { mode: playwrightMode, pluginRoot })
   if (useMemory && !refresh && memoryRecord.memory && memoryMatchesFingerprint(memoryRecord.memory, fingerprint)) {
     const verification = await verifyCachedEnvironment(resolvedRoot, memoryRecord.memory, env)
     if (verification.valid) {
-      const result = cachedPreflightSnapshot(resolvedRoot, memoryRecord.memory, verification)
+      const result = cachedPreflightSnapshot(resolvedRoot, memoryRecord.memory, verification, playwright)
       result.root = resolvedRoot
       result.project_fingerprint = fingerprint.project_fingerprint
       result.memory = {
@@ -379,8 +394,6 @@ export async function runPreflight({ root = process.cwd(), output = null, config
   const git = probeTool('git', ['--version'], /git version\s+([\w.-]+)/i, env)
   const artifacts = detectArtifacts(resolvedRoot)
   const packageManager = packageManagerProbe(resolvedRoot, packageJson, npm, env)
-  const configuredRoots = [...configuredPlaywrightRoots, env.AUTOPW_PLAYWRIGHT_PACKAGE_ROOT, env.AUTOPW_PLAYWRIGHT_ROOT, env.PLAYWRIGHT_PACKAGE_ROOT].filter(Boolean)
-  const playwright = detectPlaywright(resolvedRoot, configuredRoots, browserRoots, env)
   const targetPorts = await detectTargetPorts(resolvedRoot, packageJson, env)
 
   const result = {
@@ -423,6 +436,7 @@ function parseArgs(argv) {
     if (arg === '--root') { options.root = next; index += 1; continue }
     if (arg === '--output') { options.output = next; index += 1; continue }
     if (arg === '--refresh') { options.refresh = true; continue }
+    if (arg === '--playwright-mode') { options.playwrightMode = next; index += 1; continue }
     if (arg === '--no-memory') { options.useMemory = false; continue }
     if (arg === '--playwright-root' || arg === '--playwright-package-root') { options.configuredPlaywrightRoots.push(next); index += 1; continue }
     throw new Error(`Unknown argument: ${arg}`)
@@ -435,7 +449,7 @@ function parseArgs(argv) {
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv)
   if (options.help) {
-    console.log('Usage: node autopw-preflight.mjs --root <target-repo> --output <audit-root>/preflight.json [--playwright-root <package-root>] [--refresh|--no-memory]')
+    console.log('Usage: node autopw-preflight.mjs --root <target-repo> --output <audit-root>/preflight.json [--playwright-mode AUTOPW_RUNTIME|PROJECT_NATIVE] [--playwright-root <package-root>] [--refresh|--no-memory]')
     return 0
   }
   const result = await runPreflight(options)

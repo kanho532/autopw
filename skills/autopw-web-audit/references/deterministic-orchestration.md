@@ -86,15 +86,13 @@ port:8080
 
 按以下顺序发现 runner：
 
-1. 项目包装器或明确的测试命令；
-2. `package.json` 中的 Playwright Test script；
-3. `playwright.config.*` 和项目内 `@playwright/test`；
-4. 工作区或用户工具目录中的现有 Playwright Test；
-5. 工作区外、本次运行专属且版本固定的临时工具目录。
+1. AutoPW 插件内置、版本固定的 Playwright Test runner；
+2. 只有显式 `PROJECT_NATIVE` 时，才检查项目 wrapper、script、config 和 package root；
+3. 检查已有浏览器；不执行 Chromium 安装或下载。
 
 不得修改目标项目的依赖或 lockfile。只有现有测试同时覆盖相同角色、前置数据、步骤和冻结断言，且可以精确选择运行时，才标记为复用。其他覆盖缺口写入本次运行专属 spec。
 
-使用 [runtime-resolver.mjs](../scripts/playwright/runtime-resolver.mjs) 解析一个明确的 Playwright package root。生成的 config 和 spec 必须从返回的 `test_module_path` 导入 `defineConfig`、`test` 与 `expect`，并以 `process.execPath` 加返回的 `cli_path` 启动 runner。不得扫描多个 `_npx` 目录后任取第一个模块，也不得让 `npx playwright` 的 CLI 与另一个缓存中的 `playwright/test` 混用。临时工具目录必须版本固定，并作为明确的 `packageRoot` 或 `searchRoots` 输入 resolver。
+默认通过 AutoPW 内置 executor 和 `AUTOPW_RUNTIME` 使用插件内明确的 package root；CLI、config、reporter 与 test module 必须来自同一版本。显式 `PROJECT_NATIVE` 时才允许把项目 package root/config 作为输入。不得让 `npx playwright` 的 CLI 与另一个缓存中的 `playwright/test` 混用。
 
 传给 Playwright CLI 的 spec 筛选是相对 `testDir` 的 POSIX 风格路径；使用 resolver 的 `playwrightCliInvocation()` 生成参数，不传 Windows 绝对路径或把绝对路径当作正则。所有冻结浏览器 spec 先全部生成，再通过一次 `--list` 和一次 runner 调用批量执行。若 Orchestrator 按用例调用 `PLAYWRIGHT_TEST` executor，执行器必须按 attempt 复用同一个批处理 Promise，并从批量结果中返回对应 case，禁止每个 case 并发覆盖共享 config、list、timing 或 JSON 结果文件。
 

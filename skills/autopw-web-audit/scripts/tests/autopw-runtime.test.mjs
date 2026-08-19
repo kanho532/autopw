@@ -11,6 +11,7 @@ import {
   inspectPlaywrightRuntime,
   playwrightCliInvocation,
   relativePlaywrightSpec,
+  resolveBundledPlaywrightRuntime,
   resolvePlaywrightRuntime
 } from '../playwright/runtime-resolver.mjs'
 import { validateSchema } from '../lib/schema-validator.mjs'
@@ -79,6 +80,13 @@ test('resolves one Playwright package for both CLI and test imports', () => {
   assert.equal(runtime.version, '1.2.3')
   assert.equal(runtime.cli_path, path.join(packageRoot, 'cli.js'))
   assert.equal(runtime.test_module_path, path.join(packageRoot, 'test.js'))
+})
+
+test('resolves the version-pinned AutoPW Playwright runtime independently of the target project', () => {
+  const runtime = resolveBundledPlaywrightRuntime({ pluginRoot: path.resolve(process.cwd()) })
+  assert.equal(runtime.package_name, '@playwright/test')
+  assert.equal(runtime.version, '1.62.1')
+  assert.ok(runtime.cli_path.endsWith(path.join('node_modules', '@playwright', 'test', 'cli.js')))
 })
 
 test('builds Playwright CLI filters relative to testDir and rejects external specs', () => {

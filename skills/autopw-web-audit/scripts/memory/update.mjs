@@ -13,9 +13,6 @@ const ENVIRONMENT_KEYS = new Set([
   'java_version',
   'maven_version',
   'package_manager',
-  'playwright_version',
-  'playwright_package_root',
-  'chromium_executable',
 ])
 
 function verifiedRuntimeTarget(target) {
@@ -28,7 +25,7 @@ function selectEnvironment(environment, verified, environmentVerified) {
   const allVerified = verified.environment === true
   for (const [key, value] of Object.entries(environment ?? {})) {
     if (value === undefined || value === null || !ENVIRONMENT_KEYS.has(key)) continue
-    if (allVerified || environmentVerified[key] === true || (verified.playwright === true && ['playwright_version', 'playwright_package_root', 'chromium_executable'].includes(key))) {
+    if (allVerified || environmentVerified[key] === true) {
       selected[key] = String(value)
     }
   }
@@ -51,14 +48,13 @@ export function updateProjectMemory({
   const verifiedState = {
     backend_start: verified.backend_start === true,
     frontend_start: verified.frontend_start === true,
-    playwright: verified.playwright === true,
     ...(verified.environment !== undefined ? { environment: verified.environment === true } : {}),
   }
   const storedRuntime = {}
   if (verifiedState.backend_start && runtime.backend) storedRuntime.backend = verifiedRuntimeTarget(runtime.backend)
   if (verifiedState.frontend_start && runtime.frontend) storedRuntime.frontend = verifiedRuntimeTarget(runtime.frontend)
 
-  if (!verifiedState.backend_start && !verifiedState.frontend_start && !verifiedState.playwright && verifiedState.environment !== true) {
+  if (!verifiedState.backend_start && !verifiedState.frontend_start && verifiedState.environment !== true) {
     throw new Error('At least one verified fact is required')
   }
 
@@ -71,7 +67,7 @@ export function updateProjectMemory({
     environment: selectEnvironment(environment, verifiedState, environmentVerified),
     verified: verifiedState,
     ...(executorHints ? { executor_hints: executorHints } : {}),
-    ...(preflightSnapshot ? { preflight_snapshot: preflightSnapshot } : {}),
+    ...(preflightSnapshot ? { preflight_snapshot: projectSnapshotWithoutPlaywright(preflightSnapshot) } : {}),
   }
   assertSchema('project-memory', memory)
 
@@ -81,6 +77,12 @@ export function updateProjectMemory({
   fs.writeFileSync(temporaryPath, `${JSON.stringify(memory, null, 2)}\n`, 'utf8')
   fs.renameSync(temporaryPath, filePath)
   return { path: filePath, memory }
+}
+
+function projectSnapshotWithoutPlaywright(snapshot) {
+  const sanitized = JSON.parse(JSON.stringify(snapshot))
+  delete sanitized.playwright
+  return sanitized
 }
 
 function readJson(filePath) {

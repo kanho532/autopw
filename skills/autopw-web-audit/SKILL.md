@@ -104,7 +104,7 @@ node <skill-dir>/scripts/autopw-run.mjs \
 
 进程异常后使用同一冻结计划、执行器和 run root 加 `--resume` 恢复。Orchestrator 只复用 fingerprint 匹配且已落盘的用例结果；不匹配时拒绝恢复。
 
-将 `DIRECT_API` 用于直接请求，将 `PLAYWRIGHT_TEST` 用于浏览器用例；按需使用 `STATIC` 与 `LOG_STATE`。在 Playwright 导航前捕获 console、pageerror、requestfailed 和相关响应。只为覆盖缺口生成本次运行专属 spec，不修改目标项目依赖。使用 `scripts/playwright/runtime-resolver.mjs` 选定一个版本固定的 Playwright package root；spec/config 从其 `test_module_path` 导入，runner 使用 `node <cli_path>`，禁止一边调用 `npx playwright` 一边从其他 `_npx` 缓存导入测试模块。传给 runner 的 spec 筛选必须相对 `testDir`，并在一次批量 `--list` 后通过同一 runner 执行全部冻结浏览器用例。
+将 `DIRECT_API` 用于直接请求，将 `PLAYWRIGHT_TEST` 用于浏览器用例；按需使用 `STATIC` 与 `LOG_STATE`。在 Playwright 导航前捕获 console、pageerror、requestfailed 和相关响应。默认 `AUTOPW_RUNTIME` 使用插件内固定的 `@playwright/test` 与内置 executor，目标项目无需安装 Playwright；只有明确要求复用目标项目测试时才传 `--playwright-mode PROJECT_NATIVE`，并提供项目 config。只为覆盖缺口生成本次运行专属 spec，不修改目标项目依赖。传给 runner 的 spec 筛选必须相对 `testDir`，并在一次批量 `--list` 后通过同一 runner 执行全部冻结浏览器用例。Chromium 只做可用性检查；AutoPW 不负责安装或下载浏览器，缺失时形成结构化阻塞。
 
 Orchestrator 按依赖和资源锁调度安全并行任务，自动执行一次允许的清洁重放，并写入 lane 与 Router 结果。若宿主无法使用 Orchestrator，才按同一 Schema 和接口使用隔离进程降级，不得由 Agent 自行改变路由结果。
 
