@@ -101,12 +101,12 @@ export function relativePlaywrightSpec(testDir, specPath) {
   return relative.split(path.sep).join('/')
 }
 
-export function playwrightCliInvocation({ runtime, testDir, configPath, specPaths, list = false }) {
+export function playwrightCliInvocation({ runtime, testDir, configPath, specPaths, list = false, nodeOptions = [] }) {
   if (!runtime?.cli_path || !runtime?.test_module_path) {
     throw new Error('A resolved Playwright runtime is required')
   }
   const selectedSpecs = (specPaths ?? []).map((specPath) => relativePlaywrightSpec(testDir, specPath))
   const args = [runtime.cli_path, 'test', ...selectedSpecs, '--config', path.resolve(configPath)]
   if (list) args.push('--list')
-  return { command: process.execPath, args }
+  return { command: process.execPath, args: [...nodeOptions, ...args] }
 }

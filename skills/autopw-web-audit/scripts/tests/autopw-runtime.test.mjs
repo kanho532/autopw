@@ -6,6 +6,7 @@ import test from 'node:test'
 
 import { EvidenceImporter } from '../evidence/import.mjs'
 import { orchestrateRun } from '../orchestration/run.mjs'
+import { composeExecutors } from '../autopw-run.mjs'
 import { ProcessRegistry } from '../runtime/process-registry.mjs'
 import {
   inspectPlaywrightRuntime,
@@ -88,6 +89,23 @@ test('resolves the version-pinned AutoPW Playwright runtime independently of the
   assert.equal(runtime.version, '1.62.1')
   assert.ok(runtime.cli_path.endsWith(path.join('node_modules', '@playwright', 'test', 'cli.js')))
   assert.ok(runtime.browser_root.endsWith(path.join('node_modules', 'playwright-core', '.local-browsers')))
+})
+
+test('AUTOPW_RUNTIME rejects a custom Playwright executor override', () => {
+  const bundled = () => 'bundled'
+  const custom = () => 'custom'
+  assert.throws(
+    () => composeExecutors({ customExecutors: { PLAYWRIGHT_TEST: custom }, bundledExecutor: bundled, mode: 'AUTOPW_RUNTIME' }),
+    /AUTOPW_RUNTIME owns PLAYWRIGHT_TEST/
+  )
+  assert.equal(
+    composeExecutors({ customExecutors: { PLAYWRIGHT_TEST: custom }, bundledExecutor: bundled, mode: 'PROJECT_NATIVE' }).PLAYWRIGHT_TEST,
+    custom
+  )
+  assert.equal(
+    composeExecutors({ customExecutors: {}, bundledExecutor: bundled, mode: 'AUTOPW_RUNTIME' }).PLAYWRIGHT_TEST,
+    bundled
+  )
 })
 
 test('builds Playwright CLI filters relative to testDir and rejects external specs', () => {

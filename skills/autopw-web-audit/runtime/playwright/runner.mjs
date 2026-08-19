@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { spawn } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import {
   PLAYWRIGHT_MODES,
@@ -14,6 +14,7 @@ import {
 const runtimeDirectory = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(runtimeDirectory, '../../../..')
 const bundledConfigPath = path.join(runtimeDirectory, 'playwright.config.mjs')
+const bundledModuleLoaderPath = path.join(runtimeDirectory, 'module-loader.mjs')
 
 function assertMode(mode) {
   if (!PLAYWRIGHT_MODES.has(mode)) throw new Error(`Unsupported Playwright mode: ${mode}`)
@@ -41,14 +42,18 @@ export function buildRunnerInvocation({
     throw new Error('PROJECT_NATIVE requires an explicit project Playwright configPath')
   }
   const selectedConfig = configPath ? path.resolve(configPath) : bundledConfigPath
+  const nodeOptions = mode === 'AUTOPW_RUNTIME'
+    ? ['--experimental-loader', pathToFileURL(bundledModuleLoaderPath).href]
+    : []
   const invocation = playwrightCliInvocation({
     runtime,
     testDir,
     configPath: selectedConfig,
     specPaths,
-    list
+    list,
+    nodeOptions
   })
-  return { runtime, config_path: selectedConfig, ...invocation }
+  return { runtime, config_path: selectedConfig, node_options: nodeOptions, ...invocation }
 }
 
 function runProcess(command, args, { cwd, env } = {}) {
@@ -97,6 +102,7 @@ export async function runPlaywright({
       AUTOPW_TIMING_OUTPUT: timingOutput,
       ...(baseURL ? { AUTOPW_BASE_URL: baseURL } : {}),
       ...env,
+      ...(mode === 'AUTOPW_RUNTIME' ? { AUTOPW_BUNDLED_PLAYWRIGHT_PACKAGE_ROOT: invocation.runtime.package_root } : {}),
       ...(mode === 'AUTOPW_RUNTIME' ? { PLAYWRIGHT_BROWSERS_PATH: '0' } : {})
     }
   })

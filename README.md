@@ -23,6 +23,12 @@ AutoPW 是一个代码驱动的 Web 应用审查插件：先读取源码并冻�
 
 Agent 负责选择当前宿主的安装流程、处理更新并报告验证结果；用户不需要手工复制 Skills 或 MCP 配置。
 
+### Codex/Windows 发布包
+
+Codex/Windows 的稳定安装应使用 GitHub Release 中的 `autopw-win-x64-<version>.zip`，不要直接把不含依赖的源码 checkout 当作可运行发布包。将 ZIP 完整解压到本地 marketplace 指向的 AutoPW 目录，再按上面的 Agent 安装提示安装或更新；该包已包含固定版本的 Playwright Test、`node_modules` 和 Chromium，目标项目无需安装 Playwright 或下载浏览器。
+
+维护者可在 Windows 上运行 `npm run package:plugin` 生成并自动 smoke-test 同名 ZIP。打包流程会执行干净依赖安装、下载本地 Chromium、校验 `chrome.exe`，并在解压后的包上运行 `--list` 与真实浏览器用例。
+
 ## 手动安装
 
 不使用 Agent 自动安装时，按下方宿主类型选择对应的本地加载、marketplace 或 Skills + MCP 方法。
@@ -47,7 +53,7 @@ Agent 负责选择当前宿主的安装流程、处理更新并报告验证结�
 
 ### Codex
 
-通过已配置的 Codex local marketplace 安装或更新本目录中的 `autopw`。安装后必须新建任务，使新 Skills 和插件内置 MCP 工具进入任务上下文；已打开任务会保留旧技能清单，不能用于验证新版本。执行前应确认技能路径中的 cache 版本与已安装插件一致。
+通过已配置的 Codex local marketplace 安装或更新解压后的 `autopw-win-x64-<version>` 目录；源码目录仅适合开发，需先执行依赖安装和打包流程。安装后必须新建任务，使新 Skills 和插件内置 MCP 工具进入任务上下文；已打开任务会保留旧技能清单，不能用于验证新版本。执行前应确认技能路径中的 cache 版本与已安装插件一致。
 
 ### Claude Code
 

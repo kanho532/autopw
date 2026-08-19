@@ -10,7 +10,7 @@ $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
 $version = [string]$manifest.version
 $staging = Join-Path ([IO.Path]::GetTempPath()) ("autopw-package-" + [guid]::NewGuid().ToString("N"))
 $outputRoot = Join-Path $root $OutputDirectory
-$archivePath = Join-Path $outputRoot ("autopw-universal-" + $version + ".zip")
+$archivePath = Join-Path $outputRoot ("autopw-win-x64-" + $version + ".zip")
 
 try {
   New-Item -ItemType Directory -Path $staging -Force | Out-Null
@@ -42,6 +42,8 @@ try {
   if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath -Force }
   $archiveEntries = Get-ChildItem -LiteralPath $staging -Force | Select-Object -ExpandProperty FullName
   Compress-Archive -Path $archiveEntries -DestinationPath $archivePath -CompressionLevel Optimal
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "scripts\smoke-test-package.ps1") -PackagePath $archivePath
+  if ($LASTEXITCODE -ne 0) { throw "Package smoke test failed: $archivePath" }
   Write-Output "Created $archivePath"
   Write-Output "Bundled Chromium: $($chromiumExecutable.FullName)"
 }

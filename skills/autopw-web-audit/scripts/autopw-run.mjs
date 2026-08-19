@@ -10,6 +10,17 @@ import { createPlaywrightExecutor } from './executors/playwright.mjs'
 
 export { orchestrateRun } from './orchestration/run.mjs'
 
+export function composeExecutors({ customExecutors = {}, bundledExecutor, mode = 'AUTOPW_RUNTIME' } = {}) {
+  const provided = customExecutors && typeof customExecutors === 'object' ? customExecutors : {}
+  if (mode === 'AUTOPW_RUNTIME' && Object.prototype.hasOwnProperty.call(provided, 'PLAYWRIGHT_TEST')) {
+    throw new Error('AUTOPW_RUNTIME owns PLAYWRIGHT_TEST; remove the custom PLAYWRIGHT_TEST executor or choose PROJECT_NATIVE')
+  }
+  if (mode === 'PROJECT_NATIVE' && typeof provided.PLAYWRIGHT_TEST === 'function') {
+    return { ...provided }
+  }
+  return { ...provided, PLAYWRIGHT_TEST: bundledExecutor }
+}
+
 function parseArgs(argv) {
   const args = {}
   for (let index = 0; index < argv.length; index += 1) {
@@ -48,15 +59,13 @@ async function main() {
     ? await module.createExecutors({ plan, runRoot, playwrightMode })
     : module.executors ?? module.default
   const customExecutors = created?.executors ?? created ?? {}
-  const executors = {
-    PLAYWRIGHT_TEST: createPlaywrightExecutor({
+  const bundledPlaywrightExecutor = createPlaywrightExecutor({
       plan,
       runRoot,
       projectRoot: args.project_root ?? plan.target?.repository,
       mode: playwrightMode
-    }),
-    ...customExecutors
-  }
+    })
+  const executors = composeExecutors({ customExecutors, bundledExecutor: bundledPlaywrightExecutor, mode: playwrightMode })
   const lifecycle = created?.lifecycle ?? module.lifecycle ?? {}
   const executorFingerprint = crypto.createHash('sha256').update(fs.readFileSync(executorPath)).digest('hex')
   const result = await orchestrateRun({
