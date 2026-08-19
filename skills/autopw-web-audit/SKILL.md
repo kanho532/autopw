@@ -7,6 +7,18 @@ description: 审查受信任的本地 Web 应用源码、Git 变更、两个 com
 
 先理解业务与风险，再把冻结计划交给确定性执行系统。区分静态假设、执行事实、调度决定和报告解释。
 
+## 阅读策略
+
+正常审查首先只读取 [quick-contract.md](references/quick-contract.md)，不要在任务开始时逐字读取全部 references、Schema 和 runtime scripts。
+
+只有出现以下条件时才读取对应详细文档：
+
+- 使用增量范围时：读取 `commit-range-review.md`。
+- 需要实现或排查执行器、浏览器或 evidence 时：读取 `execution-and-evidence.md`。
+- 出现调度、checkpoint 或 replay 问题时：读取 `deterministic-orchestration.md`。
+- Router 授权 MCP 时：读取同级 `autopw-browser-diagnostics` Skill。
+- Validator 返回具体 Schema 或 artifact 错误时：只读取对应 Schema 或实现文件。
+
 ## 产物位置（必须先遵守）
 
 所有审查产物必须写入“被测试项目”的根目录，不得写入插件源码目录、当前 Agent 工作目录或项目外临时目录。启动审查时先创建唯一的审查目录：
@@ -15,7 +27,7 @@ description: 审查受信任的本地 Web 应用源码、Git 变更、两个 com
 <测试项目根目录>/autopw-output/<运行模式>-<UTC时间>/
 ```
 
-其中 `<运行模式>` 只能是 `FULL`、`COMMIT_TO_WORKTREE` 或 `COMMIT_TO_COMMIT`；`<UTC时间>` 使用 `YYYYMMDDTHHmmssZ`，例如 `COMMIT_TO_COMMIT-20260818T093000Z`。该目录记为 `<audit-root>`，计划、`change-scope.md`、`runs/`、报告、`validation.json` 和所有证据都必须位于其中；同一项目的不同审查不得复用旧目录。
+其中 `<运行模式>` 只能是 `FULL`、`COMMIT_TO_WORKTREE` 或 `COMMIT_TO_COMMIT`；`<UTC时间>` 使用 `YYYYMMDDTHHmmssZ`，例如 `COMMIT_TO_COMMIT-20260818T093000Z`。该目录记为 `<audit-root>`，`preflight.json`、计划、`change-scope.md`、`runs/`、报告、`validation.json` 和所有证据都必须位于其中；同一项目的不同审查不得复用旧目录。
 
 ## 输出与边界
 
@@ -53,7 +65,15 @@ description: 审查受信任的本地 Web 应用源码、Git 变更、两个 com
 
 ### 1. 检查源码
 
-在打开浏览器前检查仓库说明、Git 状态、包清单、启动配置、路由、API 客户端、服务端端点、身份验证、持久化和现有测试。构建精简功能映射，将 UI 操作关联到 API 和权威状态。把代码矛盾记录为静态假设；没有运行证据时不得称为已验证缺陷。
+先读取 `quick-contract.md`，再运行一次环境探测：
+
+```bash
+node <skill-dir>/scripts/autopw-preflight.mjs \
+  --root <target-repo> \
+  --output <audit-root>/preflight.json
+```
+
+读取 `preflight.json`，据此选择已有 jar、Maven、包管理器和 Playwright Test 执行路径；preflight 只探测环境，不替代测试规划。随后在打开浏览器前检查仓库说明、Git 状态、包清单、启动配置、路由、API 客户端、服务端端点、身份验证、持久化和现有测试。构建精简功能映射，将 UI 操作关联到 API 和权威状态。把代码矛盾记录为静态假设；没有运行证据时不得称为已验证缺陷。
 
 ### 2. 冻结测试意图
 
@@ -68,7 +88,7 @@ description: 审查受信任的本地 Web 应用源码、Git 变更、两个 com
 
 ### 3. 交给 Orchestrator 执行
 
-执行前读取 [deterministic-orchestration.md](references/deterministic-orchestration.md) 和 [execution-and-evidence.md](references/execution-and-evidence.md)。实现本次运行的执行器模块；每个执行器使用统一的 `executeCase(testCase, context)` 接口，返回符合 [lane-result.schema.json](references/lane-result.schema.json) 的事实。
+常规执行遵循 `quick-contract.md`。只有需要实现新的 executor、处理异常执行路径、或排查 runtime 问题时，才读取 [execution-and-evidence.md](references/execution-and-evidence.md)；只有出现调度、checkpoint 或 replay 问题时，才读取 [deterministic-orchestration.md](references/deterministic-orchestration.md)。实现本次运行的执行器模块；每个执行器使用统一的 `executeCase(testCase, context)` 接口，返回符合 [lane-result.schema.json](references/lane-result.schema.json) 的事实。
 
 运行：
 
