@@ -10,8 +10,8 @@ $extractRoot = Join-Path ([IO.Path]::GetTempPath()) ("autopw-smoke-" + [guid]::N
 
 try {
   New-Item -ItemType Directory -Path $extractRoot -Force | Out-Null
-  & tar.exe -xf $package -C $extractRoot
-  if ($LASTEXITCODE -ne 0) { throw "Failed to extract package: $package" }
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  [System.IO.Compression.ZipFile]::ExtractToDirectory($package, $extractRoot)
   & node (Join-Path $PSScriptRoot "smoke-test-plugin.mjs") $extractRoot
   if ($LASTEXITCODE -ne 0) { throw "Package smoke test failed: $package" }
 }
