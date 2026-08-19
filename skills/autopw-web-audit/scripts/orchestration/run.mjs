@@ -8,6 +8,7 @@ import { EvidenceImporter } from '../evidence/import.mjs'
 import {
   ProcessRegistry,
   assertManagedPortsAvailable,
+  createAttemptIsolation,
   createRunIsolation
 } from '../runtime/process-registry.mjs'
 import { CheckpointStore, executionFingerprint } from './checkpoint.mjs'
@@ -102,7 +103,11 @@ async function executeInitialPlan(plan, runRoot, executors, checkpoint, runtime)
           run_id: plan.run_id,
           run_root: runRoot,
           lane,
-          runtime,
+          runtime: {
+            ...runtime,
+            isolation: createAttemptIsolation(runtime.isolation, 1, runRoot)
+          },
+          batch_cases: batch,
           dependency_results: Object.fromEntries(
             testCase.dependencies.map((dependency) => [dependency, completed.get(dependency)])
           )
@@ -221,7 +226,11 @@ export async function orchestrateRun({
               run_root: absoluteRunRoot,
               lane: 'PLAYWRIGHT_TEST',
               replay: true,
-              runtime,
+              runtime: {
+                ...runtime,
+                isolation: createAttemptIsolation(runtime.isolation, 2, absoluteRunRoot)
+              },
+              batch_cases: [testCase],
               previous_result: completed.get(testCase.id)
             })
             checkpoint.record('PLAYWRIGHT_TEST', result)

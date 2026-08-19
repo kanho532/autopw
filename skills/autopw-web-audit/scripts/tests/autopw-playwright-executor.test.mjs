@@ -57,7 +57,7 @@ test('built-in Playwright executor batches one list and one run per attempt', as
     }
   }
   const executor = createPlaywrightExecutor({ plan, runRoot, runner })
-  const context = { attempt: 1, run_id: plan.run_id, run_root: runRoot, runtime: { isolation: { data_prefix: 'autopw_executor_' } } }
+  const context = { attempt: 1, run_id: plan.run_id, run_root: runRoot, batch_cases: plan.cases, runtime: { isolation: { data_prefix: 'autopw_executor_' } } }
   const results = await Promise.all(plan.cases.map((testCase) => executor(testCase, context)))
 
   assert.deepEqual(calls, ['list', 'run'])
@@ -67,4 +67,48 @@ test('built-in Playwright executor batches one list and one run per attempt', as
   assert.equal(results[0].execution_context.runner_version, '1.62.1')
   assert.equal(results[0].execution_context.spec_path, 'playwright/generated/browser-001.spec.mjs')
   assert.equal(results[0].isolation_id, 'autopw_executor_')
+})
+
+test('executor respects the orchestrator batch boundary and uses a new attempt isolation', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autopw-executor-boundary-'))
+  const runRoot = path.join(root, 'run')
+  const generated = path.join(runRoot, 'generated')
+  fs.mkdirSync(generated, { recursive: true })
+  const firstSpec = path.join(generated, 'browser-001.spec.mjs')
+  const secondSpec = path.join(generated, 'browser-002.spec.mjs')
+  fs.writeFileSync(firstSpec, '')
+  fs.writeFileSync(secondSpec, '')
+  const cases = [browserCase('BROWSER-001', path.relative(runRoot, firstSpec)), browserCase('BROWSER-002', path.relative(runRoot, secondSpec))]
+  const plan = {
+    run_id: 'executor-boundary-test',
+    target: { repository: root },
+    environment: { locale: 'en-US', timezone: 'UTC', playwright: { mode: 'AUTOPW_RUNTIME' } },
+    cases
+  }
+  const calls = []
+  const runner = async (options) => {
+    calls.push({ list: Boolean(options.list), specs: options.specPaths, env: options.env })
+    const id = path.basename(options.specPaths[0]).match(/browser-\d+/i)?.[0].toUpperCase()
+    return options.list
+      ? { code: 0, stdout: '', stderr: '' }
+      : {
+          code: 0,
+          runtime: { version: '1.62.1' },
+          timings: { tests: [{ case_id: id, title: `${id} browser flow`, status: 'passed', started_at: '2026-01-01T00:00:00.000Z', finished_at: '2026-01-01T00:00:00.010Z' }] }
+        }
+  }
+  const executor = createPlaywrightExecutor({ plan, runRoot, runner })
+  const baseContext = { run_id: plan.run_id, run_root: runRoot, runtime: { isolation: { data_prefix: 'autopw_executor_' } } }
+  const first = await executor(cases[0], { ...baseContext, attempt: 1, batch_cases: [cases[0]] })
+  const second = await executor(cases[1], { ...baseContext, attempt: 1, batch_cases: [cases[1]] })
+  const replay = await executor(cases[0], { ...baseContext, attempt: 2, batch_cases: [cases[0]], runtime: { isolation: { data_prefix: 'autopw_executor_attempt2_' } } })
+
+  assert.equal(first.status, 'PASS')
+  assert.equal(second.status, 'PASS')
+  assert.equal(replay.status, 'PASS')
+  assert.deepEqual(calls.map((call) => call.specs.length), [1, 1, 1, 1, 1, 1])
+  assert.notEqual(calls[0].env.AUTOPW_DATA_PREFIX, calls[4].env.AUTOPW_DATA_PREFIX)
+  assert.equal(calls[0].env.AUTOPW_ATTEMPT, '1')
+  assert.equal(calls[4].env.AUTOPW_ATTEMPT, '2')
+  assert.notEqual(first.isolation_id, replay.isolation_id)
 })

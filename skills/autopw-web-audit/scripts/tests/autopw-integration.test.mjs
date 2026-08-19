@@ -110,8 +110,10 @@ test('orchestrator closes FAIL -> replay PASS as FLAKY', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autopw-orchestrator-'))
   const runRoot = path.join(root, 'runs', 'run-integration')
   const plan = browserPlan(root)
+  const executions = []
   const executors = {
     PLAYWRIGHT_TEST: async (_testCase, execution) => {
+      executions.push(execution)
       fs.mkdirSync(path.join(runRoot, 'playwright'), { recursive: true })
       fs.writeFileSync(path.join(runRoot, 'playwright', 'screenshot.png'), 'image')
       fs.writeFileSync(path.join(runRoot, 'playwright', 'trace.zip'), 'trace')
@@ -133,6 +135,11 @@ test('orchestrator closes FAIL -> replay PASS as FLAKY', async () => {
   assert.equal(router.decisions[0].next_action, 'DONE')
   assert.equal(router.decisions[0].final_status, 'FLAKY')
   assert.deepEqual(lane.cases.map((result) => result.attempt), [1, 2])
+  assert.equal(executions[0].batch_cases.length, 1)
+  assert.equal(executions[1].batch_cases.length, 1)
+  assert.notEqual(executions[0].runtime.isolation.data_prefix, executions[1].runtime.isolation.data_prefix)
+  assert.equal(executions[0].runtime.isolation.env.AUTOPW_ATTEMPT, '1')
+  assert.equal(executions[1].runtime.isolation.env.AUTOPW_ATTEMPT, '2')
 })
 
 test('same replay failure with incomplete evidence authorizes MCP', () => {

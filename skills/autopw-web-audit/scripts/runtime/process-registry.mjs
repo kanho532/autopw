@@ -154,6 +154,25 @@ export function createRunIsolation(plan, runRoot) {
   }
 }
 
+export function createAttemptIsolation(isolation, attempt, runRoot) {
+  const basePrefix = String(isolation?.data_prefix ?? 'autopw_').replace(/_+$/, '')
+  const dataPrefix = `${basePrefix}_attempt${attempt}_`
+  const stateDirectory = path.join(path.resolve(runRoot), 'playwright', 'state', `attempt-${attempt}`)
+  fs.mkdirSync(stateDirectory, { recursive: true })
+  return {
+    ...isolation,
+    attempt,
+    data_prefix: dataPrefix,
+    root: path.join(isolation?.root ?? path.resolve(runRoot, 'runtime'), `attempt-${attempt}`),
+    env: {
+      ...(isolation?.env ?? {}),
+      AUTOPW_ATTEMPT: String(attempt),
+      AUTOPW_DATA_PREFIX: dataPrefix,
+      AUTOPW_BROWSER_STATE_DIR: stateDirectory
+    }
+  }
+}
+
 export async function isPortAvailable(port, host = '127.0.0.1') {
   return new Promise((resolve) => {
     const server = net.createServer()

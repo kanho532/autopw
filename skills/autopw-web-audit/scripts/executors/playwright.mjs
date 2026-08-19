@@ -113,6 +113,18 @@ function blockedResult(testCase, context, detail, runtime = null, specPath = pat
   }
 }
 
+function attemptEnvironment(context, runRoot) {
+  const isolation = context.runtime?.isolation ?? {}
+  const stateDirectory = path.join(path.resolve(runRoot), 'playwright', 'state', `attempt-${context.attempt}`)
+  fs.mkdirSync(stateDirectory, { recursive: true })
+  return {
+    ...(isolation.env ?? {}),
+    AUTOPW_ATTEMPT: String(context.attempt),
+    AUTOPW_DATA_PREFIX: isolation.data_prefix ?? `${context.run_id}:attempt:${context.attempt}`,
+    AUTOPW_BROWSER_STATE_DIR: stateDirectory
+  }
+}
+
 export function createPlaywrightExecutor({
   plan,
   runRoot,
@@ -124,17 +136,19 @@ export function createPlaywrightExecutor({
 } = {}) {
   const batches = new Map()
   return async function playrightExecutor(testCase, context) {
-    const key = `${context.attempt}`
+    const batchCases = context.batch_cases?.length ? context.batch_cases : [testCase]
+    const batchKey = batchCases.map((item) => item.id).sort().join(',')
+    const key = `${context.attempt}:${batchKey}`
     if (!batches.has(key)) {
-      batches.set(key, runBatch({ plan, runRoot, projectRoot, mode, runner, packageRoot, searchRoots, testCase, context }))
+      batches.set(key, runBatch({ plan, runRoot, projectRoot, mode, runner, packageRoot, searchRoots, batchCases, context }))
     }
     const batch = await batches.get(key)
     return batch.get(testCase.id) ?? blockedResult(testCase, context, 'Playwright batch did not produce a result for this case.')
   }
 }
 
-async function runBatch({ plan, runRoot, projectRoot, mode, runner, packageRoot, searchRoots, testCase, context }) {
-  const cases = (plan?.cases ?? [testCase]).filter((item) => item.executor === 'PLAYWRIGHT_TEST')
+async function runBatch({ plan, runRoot, projectRoot, mode, runner, packageRoot, searchRoots, batchCases, context }) {
+  const cases = batchCases.filter((item) => item.executor === 'PLAYWRIGHT_TEST')
   const specs = cases.map((item) => ({ testCase: item, specPath: resolveSpecPath(item, { runRoot, projectRoot }) }))
   const missing = specs.filter((item) => !item.specPath)
   const results = new Map(missing.map(({ testCase }) => [testCase.id, blockedResult(testCase, context, 'Browser case has no generated or declared Playwright spec path.')]))
@@ -148,9 +162,10 @@ async function runBatch({ plan, runRoot, projectRoot, mode, runner, packageRoot,
   const outputFile = path.join(runRoot, 'playwright', `autopw-playwright-timings-attempt-${context.attempt}.json`)
   let runtime = null
   try {
-    const listed = await runner({ mode, projectRoot, testDir, specPaths, packageRoot, searchRoots, configPath: sourceValue(runnable[0].testCase, ['config_path']), runRoot, outputFile, baseURL: plan?.environment?.playwright?.base_url, list: true })
+    const env = attemptEnvironment(context, runRoot)
+    const listed = await runner({ mode, projectRoot, testDir, specPaths, packageRoot, searchRoots, configPath: sourceValue(runnable[0].testCase, ['config_path']), runRoot, outputFile, baseURL: plan?.environment?.playwright?.base_url, env, list: true })
     if (listed.code !== 0) throw new Error(`Playwright --list failed with exit code ${listed.code}: ${listed.stderr || listed.stdout}`)
-    const executed = await runner({ mode, projectRoot, testDir, specPaths, packageRoot, searchRoots, configPath: sourceValue(runnable[0].testCase, ['config_path']), runRoot, outputFile, baseURL: plan?.environment?.playwright?.base_url })
+    const executed = await runner({ mode, projectRoot, testDir, specPaths, packageRoot, searchRoots, configPath: sourceValue(runnable[0].testCase, ['config_path']), runRoot, outputFile, baseURL: plan?.environment?.playwright?.base_url, env })
     runtime = executed.runtime
     if (executed.code !== 0 && !executed.timings) throw new Error(`Playwright execution failed with exit code ${executed.code}: ${executed.stderr || executed.stdout}`)
     const byCase = new Map((executed.timings?.tests ?? []).filter((item) => item.case_id).map((item) => [item.case_id, item]))
@@ -163,4 +178,3 @@ async function runBatch({ plan, runRoot, projectRoot, mode, runner, packageRoot,
   }
   return results
 }
-
