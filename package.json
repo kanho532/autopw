@@ -9,7 +9,8 @@
   "scripts": {
     "test": "node --test skills/autopw-web-audit/scripts/tests/*.test.mjs skills/autopw-web-audit/scripts/tests/*.test.cjs",
     "test:router": "node --test skills/autopw-web-audit/scripts/tests/autopw-router.test.mjs",
-    "test:integration": "node --test skills/autopw-web-audit/scripts/tests/autopw-integration.test.mjs"
+    "test:integration": "node --test skills/autopw-web-audit/scripts/tests/autopw-integration.test.mjs",
+    "package:plugin": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-plugin.ps1"
   },
   "dependencies": {
     "@playwright/test": "1.62.1",

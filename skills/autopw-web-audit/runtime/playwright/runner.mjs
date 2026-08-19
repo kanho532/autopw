@@ -96,7 +96,8 @@ export async function runPlaywright({
       AUTOPW_OUTPUT_DIR: testOutputDirectory,
       AUTOPW_TIMING_OUTPUT: timingOutput,
       ...(baseURL ? { AUTOPW_BASE_URL: baseURL } : {}),
-      ...env
+      ...env,
+      ...(mode === 'AUTOPW_RUNTIME' ? { PLAYWRIGHT_BROWSERS_PATH: '0' } : {})
     }
   })
   if (resolvedRunRoot) {

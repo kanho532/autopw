@@ -1,6 +1,6 @@
 # AutoPW
 
-当前版本已内置固定版本的 `@playwright/test@1.62.1` 与 Playwright Test 批量执行器。默认使用 `AUTOPW_RUNTIME`，目标项目无需安装 Playwright；如需复用目标项目自身的测试运行时，可显式选择 `PROJECT_NATIVE`。Project Memory 只缓存已验证的项目启动与环境事实，不缓存 Playwright 或 Chromium 路径。Chromium 仅检查现有可用性，本插件不负责安装或下载浏览器。
+当前版本已内置固定版本的 `@playwright/test@1.62.1`、Playwright Test 批量执行器和 Chromium。默认使用 `AUTOPW_RUNTIME`，目标项目无需安装 Playwright 或 Chromium；如需复用目标项目自身的测试运行时，可显式选择 `PROJECT_NATIVE`。发布包通过 `scripts/package-plugin.ps1` 把依赖和 Chromium 放入插件包，Codex/Windows 安装后可直接运行。Project Memory 只缓存已验证的项目启动与环境事实，不缓存 Playwright 或 Chromium 路径。
 
 > 推荐模型：GPT-5.6 Luna 或 DSV4F。
 
@@ -122,7 +122,7 @@ Claude Code 原生读取 `.claude-plugin/plugin.json`、`skills/` 和 `.mcp.json
 
 ## Playwright 执行边界
 
-浏览器用例默认使用 Playwright Test。AutoPW 先复用能够精确覆盖冻结用例的现有测试，只为覆盖缺口生成本次运行专属 `.spec.*`，并通过一次 runner 调用批量执行。CLI、config 与 spec 必须绑定到同一个版本固定的 Playwright package root，spec 过滤使用相对 `testDir` 的路径；禁止混用 `npx` CLI 和其他 `_npx` 缓存中的测试模块。项目没有 Playwright Test 时，使用工作区外、本次运行专属且版本固定的临时工具目录，不修改目标项目依赖或 lockfile。
+浏览器用例默认使用插件包内的 Playwright Test 与 Chromium。AutoPW 先复用能够精确覆盖冻结用例的现有测试，只为覆盖缺口生成本次运行专属 `.spec.*`，并通过一次 runner 调用批量执行。CLI、config、spec、浏览器必须绑定到同一个插件内固定 runtime；禁止混用 `npx` CLI 和其他 `_npx` 缓存中的测试模块。发布包已经包含浏览器，不需要在目标项目安装 Playwright、下载 Chromium 或修改依赖。
 
 插件内置的 Playwright MCP 只用于定向诊断，不参与初始执行。Playwright Test 首次失败且证据不足时总是清洁重放一次；即使同一业务不变量出现 API 通过、浏览器失败，也不能跳过重放。重放通过或失败特征变化时标记为疑似 flaky；只有相同失败再次出现、证据仍不足，且冻结的 MCP 触发条件与实际原因精确匹配时，确定性路由器才允许启动 MCP。
 

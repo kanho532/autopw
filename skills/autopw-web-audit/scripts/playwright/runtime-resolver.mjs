@@ -53,7 +53,11 @@ export function inspectPlaywrightRuntime(packageRoot) {
 
 export function resolveBundledPlaywrightRuntime({ pluginRoot = DEFAULT_PLUGIN_ROOT, packageRoot } = {}) {
   const resolvedPackageRoot = packageRoot ?? path.join(path.resolve(pluginRoot), 'node_modules', '@playwright', 'test')
-  return inspectPlaywrightRuntime(resolvedPackageRoot)
+  const runtime = inspectPlaywrightRuntime(resolvedPackageRoot)
+  return {
+    ...runtime,
+    browser_root: path.resolve(resolvedPackageRoot, '../../playwright-core/.local-browsers')
+  }
 }
 
 export function resolveProjectPlaywrightRuntime({ projectRoot, packageRoot, searchRoots = [] } = {}) {

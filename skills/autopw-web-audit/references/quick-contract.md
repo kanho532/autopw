@@ -49,7 +49,7 @@ Router action 只有：`DONE`、`REPLAY_ONCE`、`START_MCP`、`INVALID_RESULT`�
 
 ## 6. Project Memory
 
-Memory 只保存已经实际确认的启动命令、项目运行时版本、端口和 executor hints。AutoPW bundled Playwright 与 Chromium 属于插件运行时，不写入 Project Memory；`package.json` 或配置文件中的候选命令只能作为 `verified: false` 的发现，不能直接写入 Memory。
+Memory 只保存已经实际确认的启动命令、项目运行时版本、端口和 executor hints。AutoPW bundled Playwright 与 Chromium 属于插件发布包运行时，不写入 Project Memory；`package.json` 或配置文件中的候选命令只能作为 `verified: false` 的发现，不能直接写入 Memory。
 
 指纹只覆盖运行时相关文件：包清单和 lockfile、Java/Gradle 配置、应用配置、Vite/Playwright 配置、`.env.example`、Docker 配置。普通源码、README 和 audit artifact 不会导致缓存失效。
 

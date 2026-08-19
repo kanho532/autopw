@@ -18,11 +18,11 @@
 
 ## 2. Playwright Test 发现与 MCP 门禁
 
-浏览器用例默认且首先使用 AutoPW bundled Playwright Test。默认 `AUTOPW_RUNTIME` 从插件自身固定版本加载 CLI、test module、config 和 reporter，目标项目无需 Playwright 依赖。只有用户明确选择 `PROJECT_NATIVE` 时才检查并复用目标项目 runtime/config。Chromium 只检查现有安装，不执行安装器或下载。按顺序记录：
+浏览器用例默认且首先使用插件包内的 AutoPW bundled Playwright Test 与 Chromium。默认 `AUTOPW_RUNTIME` 从插件自身固定版本加载 CLI、test module、config、reporter 和浏览器，目标项目无需 Playwright 或 Chromium。只有用户明确选择 `PROJECT_NATIVE` 时才检查并复用目标项目 runtime/config。按顺序记录：
 
 1. AutoPW 插件 `runtime/playwright/runner.mjs` 与固定 `@playwright/test`；
 2. 仅在 `PROJECT_NATIVE` 下检查项目 wrapper、script、config 和项目 package root；
-3. 检查已有 Chromium/Chrome/Edge；不执行浏览器安装或下载；
+3. 校验插件包内 `.local-browsers` 的 Chromium；`PROJECT_NATIVE` 才检查目标项目的浏览器；
 4. 如果 runtime 或浏览器不可用，写入结构化 `BLOCKED` 结果，同时继续 API、日志、状态和静态用例。
 
 只有现有测试同时覆盖相同角色、前置数据、步骤和冻结断言，且可以精确选择运行时，才复用该测试。其余浏览器用例写入本次运行专属 `.spec.*`。内置 executor 使用同一 bundled runtime、相对 `testDir` 的 spec 筛选、一次 `playwright test --list` 和一次批量执行，并由 AutoPW reporter 生成计时与错误证据。

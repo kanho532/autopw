@@ -208,7 +208,7 @@ function detectPlaywright(root, configuredRoots, browserRoots, env, { mode = 'AU
   if (mode === 'AUTOPW_RUNTIME') {
     try {
       const bundled = resolveBundledPlaywrightRuntime({ pluginRoot })
-      runtime = { package_name: bundled.package_name, version: bundled.version, package_root: bundled.package_root, manifest_path: bundled.manifest_path }
+      runtime = { package_name: bundled.package_name, version: bundled.version, package_root: bundled.package_root, manifest_path: bundled.manifest_path, browser_root: bundled.browser_root }
     } catch {
       runtime = null
     }
@@ -235,7 +235,11 @@ function detectPlaywright(root, configuredRoots, browserRoots, env, { mode = 'AU
     }
   }
 
-  const roots = [...new Set([...browserRoots, ...platformBrowserRoots(runtime.package_root, env)])]
+  const roots = [...new Set([
+    ...browserRoots,
+    ...(mode === 'AUTOPW_RUNTIME' && runtime.browser_root ? [runtime.browser_root] : []),
+    ...platformBrowserRoots(runtime.package_root, env)
+  ])]
   let executablePath = null
   for (const browserRoot of roots) {
     executablePath = findChromiumExecutable(browserRoot)

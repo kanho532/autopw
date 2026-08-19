@@ -88,7 +88,7 @@ port:8080
 
 1. AutoPW 插件内置、版本固定的 Playwright Test runner；
 2. 只有显式 `PROJECT_NATIVE` 时，才检查项目 wrapper、script、config 和 package root；
-3. 检查已有浏览器；不执行 Chromium 安装或下载。
+3. 校验插件包内的 Chromium；`PROJECT_NATIVE` 才检查目标项目浏览器。
 
 不得修改目标项目的依赖或 lockfile。只有现有测试同时覆盖相同角色、前置数据、步骤和冻结断言，且可以精确选择运行时，才标记为复用。其他覆盖缺口写入本次运行专属 spec。
 

@@ -87,6 +87,7 @@ test('resolves the version-pinned AutoPW Playwright runtime independently of the
   assert.equal(runtime.package_name, '@playwright/test')
   assert.equal(runtime.version, '1.62.1')
   assert.ok(runtime.cli_path.endsWith(path.join('node_modules', '@playwright', 'test', 'cli.js')))
+  assert.ok(runtime.browser_root.endsWith(path.join('node_modules', 'playwright-core', '.local-browsers')))
 })
 
 test('builds Playwright CLI filters relative to testDir and rejects external specs', () => {
